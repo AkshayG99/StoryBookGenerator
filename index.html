@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Echoes of a Lifetime - Interactive Memoir Book Creator</title>
+    <meta name="description" content="Transform interviews, voice recordings, and memories of elderly family members into beautiful, illustrated storybooks. An artisanal virtual book workshop.">
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700;800&family=EB+Garamond:ital,wght@0,400..700;1,400..700&family=Inter:wght@300;400;500;600;700&family=Playfair+Display:ital,wght@0,500;0,700;1,400&family=Space+Grotesk:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- FontAwesome for iconography -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Main Stylesheet -->
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body class="theme-sepia">
+    <!-- Background Ambient Layer -->
+    <div class="ambient-glow"></div>
+
+    <header class="app-header">
+        <div class="header-container">
+            <div class="logo" id="logo-home">
+                <i class="fa-solid fa-feather-pointed gold-icon"></i>
+                <h1>Echoes of a Lifetime</h1>
+            </div>
+            <div class="header-actions">
+                <button id="btn-toggle-theme" class="btn-icon" title="Toggle Theme" aria-label="Toggle Theme">
+                    <i class="fa-solid fa-moon"></i>
+                </button>
+                <button id="btn-settings" class="btn-icon" title="Activation Settings" aria-label="Activation Settings">
+                    <i class="fa-solid fa-gear"></i>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <main class="main-content">
+        <!-- Settings Modal (API Key) -->
+        <div id="modal-settings" class="modal hidden">
+            <div class="modal-content glass-card">
+                <div class="modal-header">
+                    <h2><i class="fa-solid fa-feather gold-icon"></i> Workshop Activation</h2>
+                    <button id="btn-close-settings" class="btn-icon-close">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label for="gemini-key">Memoir Engine Key (Gemini API)</label>
+                        <div class="input-with-icon">
+                            <i class="fa-solid fa-key input-icon"></i>
+                            <input type="password" id="gemini-key" placeholder="AIzaSy..." autocomplete="off">
+                            <button id="btn-toggle-key-visibility" class="btn-input-action" type="button">
+                                <i class="fa-solid fa-eye"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button id="btn-save-settings" class="btn btn-primary">Activate Engine</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- PANEL A: LANDING PAGE -->
+        <section id="panel-landing" class="landing-panel active">
+            <!-- Hero Section -->
+            <div class="hero-section fade-in">
+                <div class="hero-left">
+                    <span class="hero-badge"><i class="fa-solid fa-award"></i> Preserve Family Heritage</span>
+                    <h2>Turn Spoken Memories Into Illustrated Keepsakes</h2>
+                    <div class="hero-ctas">
+                        <button id="btn-start-memoir" class="btn btn-primary btn-large">
+                            <i class="fa-solid fa-book-open"></i> Begin a New Memoir
+                        </button>
+                    </div>
+                </div>
+                <div class="hero-right">
+                    <div class="sample-book-wrapper">
+                        <!-- Book Viewport -->
+                        <div class="book-viewport sample-viewport">
+                            <div class="book-container sample-book-element">
+                                <div class="book-spine"></div>
+                                
+                                <!-- Spread 1 -->
+                                <div class="sample-spread active">
+                                    <!-- Left Page (Illustration) -->
+                                    <div class="book-page left-page">
+                                        <div class="page-content illustration-container">
+                                            <img src="assets/story_childhood.png" alt="Chapter 1 Illustration" class="illustration-image">
+                                        </div>
+                                        <div class="page-number-left">1</div>
+                                    </div>
+                                    <!-- Right Page (Text) -->
+                                    <div class="book-page right-page">
+                                        <div class="page-content narrative-container">
+                                            <h3 class="page-title">Chapter 1: The Whispers of Youth</h3>
+                                            <div class="page-narrative">
+                                                <p>Back in 1948, the world felt much bigger and slower. In the backyard of our small farmhouse stood a giant old oak tree. I would spend hours underneath its branches, building little wooden boats out of twigs and leaves, launching them into imaginary streams. It was my private kingdom, where the leaves whispered stories of the places I would one day see and the adventures that lay ahead.</p>
+                                            </div>
+                                        </div>
+                                        <div class="page-number-right">2</div>
+                                    </div>
+                                </div>
+                                
+                                <!-- Spread 2 -->
+                                <div class="sample-spread">
+                                    <!-- Left Page (Illustration) -->
+                                    <div class="book-page left-page">
+                                        <div class="page-content illustration-container">
+                                            <img src="assets/story_adventure.png" alt="Chapter 2 Illustration" class="illustration-image">
+                                        </div>
+                                        <div class="page-number-left">3</div>
+                                    </div>
+                                    <!-- Right Page (Text) -->
+                                    <div class="book-page right-page">
+                                        <div class="page-content narrative-container">
+                                            <h3 class="page-title">Chapter 2: The Journey to New Horizons</h3>
+                                            <div class="page-narrative">
+                                                <p>When I turned eighteen, I took my first job on the transcontinental railway. I still remember the raw power of the steam engine as it chugged through the green valleys and mountain passes. Looking out the window, watching the landscape shift and change, I realized that life itself is a journey, and every whistle blow was a promise of a new adventure.</p>
+                                            </div>
+                                        </div>
+                                        <div class="page-number-right">4</div>
+                                    </div>
+                                </div>
+                                
+                                <!-- Spread 3 -->
+                                <div class="sample-spread">
+                                    <!-- Left Page (Illustration) -->
+                                    <div class="book-page left-page">
+                                        <div class="page-content illustration-container">
+                                            <img src="assets/story_family.png" alt="Chapter 3 Illustration" class="illustration-image">
+                                        </div>
+                                        <div class="page-number-left">5</div>
+                                    </div>
+                                    <!-- Right Page (Text) -->
+                                    <div class="book-page right-page">
+                                        <div class="page-content narrative-container">
+                                            <h3 class="page-title">Chapter 3: The Golden Years of Comfort</h3>
+                                            <div class="page-narrative">
+                                                <p>Now, many years later, my favorite place is here by the warm, crackling fireplace, sitting in rocking chairs with my beloved Sarah. The room is filled with the scent of hot tea and the quiet ticking of the grandfather clock. As I watch the embers glow, I look back on all the paths I took, knowing that the greatest adventure of all was the family we built together.</p>
+                                            </div>
+                                        </div>
+                                        <div class="page-number-right">6</div>
+                                    </div>
+                                </div>
+                                
+                            </div>
+                        </div>
+
+                        <!-- Navigation below book -->
+                        <div class="sample-book-nav-header">
+                            <span class="sample-book-badge"><i class="fa-solid fa-book-open"></i> The Whispering Oak (Sample)</span>
+                            <div class="sample-book-nav">
+                                <button id="btn-sample-prev" class="btn-sample-nav" disabled aria-label="Previous Page">
+                                    <i class="fa-solid fa-chevron-left"></i>
+                                </button>
+                                <div class="sample-page-slider-container">
+                                    <input type="range" id="sample-progress-range" min="0" max="2" value="0" step="1">
+                                    <span id="sample-page-indicator">Pages 1-2 of 6</span>
+                                </div>
+                                <button id="btn-sample-next" class="btn-sample-nav" aria-label="Next Page">
+                                    <i class="fa-solid fa-chevron-right"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Previews & Showcase Gallery -->
+            <div class="showcase-section fade-in-delay-1">
+                <h3 class="section-title text-center">Artisanal Illustration Presets</h3>
+                
+                <div class="carousel-deck">
+                    <div class="carousel-card glass-card">
+                        <div class="card-img-wrapper">
+                            <img src="assets/story_childhood.png" alt="Watercolor Illustration Preset">
+                            <span class="card-badge">Watercolor</span>
+                        </div>
+                        <h4>Nostalgic Childhoods</h4>
+                    </div>
+                    <div class="carousel-card glass-card">
+                        <div class="card-img-wrapper">
+                            <img src="assets/story_adventure.png" alt="Oil Painting Illustration Preset">
+                            <span class="card-badge">Oil Painting</span>
+                        </div>
+                        <h4>Adventures & Journeys</h4>
+                    </div>
+                    <div class="carousel-card glass-card">
+                        <div class="card-img-wrapper">
+                            <img src="assets/story_family.png" alt="Pencil Sketch Illustration Preset">
+                            <span class="card-badge">Pencil Sketch</span>
+                        </div>
+                        <h4>Wisdom & Family Years</h4>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Walkthrough Grid -->
+            <div class="process-section fade-in-delay-2">
+                <h3 class="section-title text-center">How the Workshop Weaves a Memoir</h3>
+                <div class="process-grid">
+                    <div class="process-item">
+                        <div class="process-number">I</div>
+                        <h4>Recount the Story</h4>
+                    </div>
+                    <div class="process-item">
+                        <div class="process-number">II</div>
+                        <h4>Refine the Chapters</h4>
+                    </div>
+                    <div class="process-item">
+                        <div class="process-number">III</div>
+                        <h4>Bespoke Painting</h4>
+                    </div>
+                    <div class="process-item">
+                        <div class="process-number">IV</div>
+                        <h4>Cherish & Share</h4>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- PANEL B: WIZARD & GENERATION -->
+        <div id="panel-wizard" class="wizard-panel-container hidden">
+            <!-- Wizard Progress Bar -->
+            <div class="wizard-progress" id="wizard-progress-bar">
+                <div class="progress-step active" id="step-indicator-1">
+                    <span class="step-num">1</span>
+                    <span class="step-label">Import Story</span>
+                </div>
+                <div class="progress-line"></div>
+                <div class="progress-step" id="step-indicator-2">
+                    <span class="step-num">2</span>
+                    <span class="step-label">Refine Outline</span>
+                </div>
+                <div class="progress-line"></div>
+                <div class="progress-step" id="step-indicator-3">
+                    <span class="step-num">3</span>
+                    <span class="step-label">Storybook</span>
+                </div>
+            </div>
+
+            <!-- Wizard Panel 1: Import Story -->
+            <section id="panel-step-1" class="wizard-panel">
+                <div class="intro-card glass-card">
+                    <h2>Record a Memoir</h2>
+                    <p>Provide the narrator's name, choose a painting style, and upload their stories. We will transform their experiences into structured, illustrated pages.</p>
+                </div>
+
+                <div class="setup-grid">
+                    <!-- Inputs and Config -->
+                    <div class="config-card glass-card">
+                        <h3><i class="fa-solid fa-feather text-gold"></i> Book Configuration</h3>
+                        
+                        <div class="form-group">
+                            <label for="elder-name">Narrator's Name</label>
+                            <input type="text" id="elder-name" placeholder="e.g. Grandpa Joseph" required>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="illustration-style">Artistic Illustration Style</label>
+                                <select id="illustration-style">
+                                    <option value="soft vintage watercolor, detailed children's book illustration">Soft Watercolor (Nostalgic)</option>
+                                    <option value="warm classic oil painting, rich colors, impressionist brush strokes">Classic Oil Painting</option>
+                                    <option value="colored pencil sketch, vintage scrapbook texture, hand-drawn detailing">Pencil Sketch & Paper</option>
+                                    <option value="nostalgic sepia vintage photograph, soft focus, 1950s camera aesthetic">Vintage Photograph</option>
+                                    <option value="vibrant modern digital painting, magical realism, warm lighting">Modern Digital Art</option>
+                                </select>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="book-length">Target Story Length</label>
+                                <select id="book-length">
+                                    <option value="4">Short Memoir (4 pages)</option>
+                                    <option value="6" selected>Standard Chronicle (6 pages)</option>
+                                    <option value="8">Detailed Biography (8 pages)</option>
+                                    <option value="10">Epic Journey (10 pages)</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="narration-tone">Storytelling Tone</label>
+                            <select id="narration-tone">
+                                <option value="heartwarming, gentle, and reflective, with grandfatherly warmth">Heartwarming & Reflective</option>
+                                <option value="nostalgic, historical, and adventure-filled">Nostalgic & Adventurous</option>
+                                <option value="poetic, emotional, and rich in philosophical wisdom">Poetic & Wise</option>
+                                <option value="humorous, lighthearted, and full of grandfatherly jokes">Lighthearted & Playful</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- Source Media Card -->
+                    <div class="source-card glass-card">
+                        <div class="source-tabs">
+                            <button class="tab-btn active" data-target="tab-paste"><i class="fa-solid fa-align-left"></i> Paste Transcript</button>
+                            <button class="tab-btn" data-target="tab-upload"><i class="fa-solid fa-file-audio"></i> Upload Audio/Video</button>
+                            <button class="tab-btn" data-target="tab-dictate"><i class="fa-solid fa-microphone"></i> Live Dictation</button>
+                        </div>
+
+                        <!-- Tab A: Paste Transcript -->
+                        <div id="tab-paste" class="tab-content active">
+                            <div class="form-group">
+                                <label for="input-transcript">Paste Interview Transcript or Notes</label>
+                                <textarea id="input-transcript" rows="10" placeholder="Type or paste the transcript of the interview here. For example:
+'I was born in 1945 in a small farmhouse. My mother used to bake fresh bread every Sunday, and the smell would fill the whole valley. During the summer, we would run down to the creek...'"></textarea>
+                            </div>
+                        </div>
+
+                        <!-- Tab B: Upload Audio/Video -->
+                        <div id="tab-upload" class="tab-content">
+                            <div class="file-upload-zone" id="drop-zone">
+                                <i class="fa-solid fa-cloud-arrow-up cloud-icon"></i>
+                                <p>Drag and drop interview audio/video here</p>
+                                <span>Support WAV, MP3, M4A, MP4 (Max 15MB for direct upload)</span>
+                                <div class="file-input-wrapper">
+                                    <button class="btn btn-secondary">Choose File</button>
+                                    <input type="file" id="file-uploader" accept="audio/*,video/*">
+                                </div>
+                            </div>
+                            <div id="selected-file-info" class="selected-file-info hidden">
+                                <i class="fa-solid fa-file-audio"></i>
+                                <span id="file-name">no-file.mp3</span>
+                                <button id="btn-remove-file" class="btn-remove">&times;</button>
+                            </div>
+                        </div>
+
+                        <!-- Tab C: Live Dictation -->
+                        <div id="tab-dictate" class="tab-content">
+                            <div class="dictation-zone">
+                                <button id="btn-record" class="btn-record">
+                                    <i class="fa-solid fa-microphone"></i>
+                                </button>
+                                <div class="dictation-status" id="dictation-status">Click microphone to record voice live</div>
+                                <div class="dictation-preview" id="dictation-preview">Speech will appear here in real-time...</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="panel-actions flex-between">
+                    <button id="btn-back-to-landing" class="btn btn-secondary"><i class="fa-solid fa-arrow-left"></i> Home</button>
+                    <button id="btn-generate-outline" class="btn btn-primary">
+                        <i class="fa-solid fa-wand-magic-sparkles"></i> Weave Outline
+                    </button>
+                </div>
+            </section>
+
+            <!-- Wizard Panel 2: Refine Outline -->
+            <section id="panel-step-2" class="wizard-panel">
+                <div class="outline-container glass-card">
+                    <div class="outline-header">
+                        <h2><i class="fa-solid fa-list-check text-gold"></i> Review Chapters</h2>
+                        <p>We have structured the recollections into chapters. You can edit the titles and key focus descriptions before the final workshop prose and artwork is generated.</p>
+                    </div>
+
+                    <div class="book-meta-inputs">
+                        <div class="form-group">
+                            <label for="outline-book-title">Memoir Title</label>
+                            <input type="text" id="outline-book-title" placeholder="The Tapestry of My Life">
+                        </div>
+                        <div class="form-group">
+                            <label for="outline-book-subtitle">Subtitle / Dedication</label>
+                            <input type="text" id="outline-book-subtitle" placeholder="A collection of stories for my family">
+                        </div>
+                    </div>
+
+                    <hr class="divider">
+
+                    <div id="outline-chapters-list" class="chapters-editor-list">
+                        <!-- Chapters Editor Rendered dynamically -->
+                    </div>
+
+                    <div class="panel-actions flex-between">
+                        <button id="btn-back-to-step1" class="btn btn-secondary"><i class="fa-solid fa-arrow-left"></i> Go Back</button>
+                        <button id="btn-generate-book" class="btn btn-primary"><i class="fa-solid fa-book"></i> Craft Memoir Book</button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Wizard Panel 3: Virtual Book View -->
+            <section id="panel-step-3" class="wizard-panel">
+                <div class="viewer-actions-bar glass-card">
+                    <div class="book-title-display">
+                        <h2 id="viewing-book-title">The Book of Memories</h2>
+                        <span id="viewing-book-subtitle">A life story</span>
+                    </div>
+                    <div class="viewer-buttons">
+                        <button id="btn-read-aloud" class="btn btn-secondary btn-icon-text" title="Read Aloud Page">
+                            <i class="fa-solid fa-volume-high"></i> <span>Read Aloud</span>
+                        </button>
+                        <button id="btn-ambience-settings" class="btn btn-secondary btn-icon-text" title="Sound Ambience">
+                            <i class="fa-solid fa-music"></i> <span>Ambience</span>
+                        </button>
+                        <div class="dropdown">
+                            <button id="btn-export-dropdown" class="btn btn-secondary btn-icon-text">
+                                <i class="fa-solid fa-download"></i> <span>Export Book</span>
+                            </button>
+                            <div class="dropdown-content">
+                                <a href="#" id="export-pdf"><i class="fa-solid fa-file-pdf"></i> Download PDF</a>
+                                <a href="#" id="export-html"><i class="fa-solid fa-file-code"></i> Standalone HTML</a>
+                                <a href="#" id="export-json"><i class="fa-solid fa-file-invoice"></i> Save Memoir JSON</a>
+                            </div>
+                        </div>
+                        <button id="btn-reset-wizard" class="btn btn-danger btn-icon-text">
+                            <i class="fa-solid fa-rotate-left"></i> <span>Start New</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Ambience Control Floating Panel -->
+                <div id="panel-ambience" class="ambience-panel glass-card hidden">
+                    <h4><i class="fa-solid fa-sliders"></i> Background Ambience</h4>
+                    <div class="ambience-row">
+                        <label for="track-piano">Gentle Piano Music</label>
+                        <div class="audio-control">
+                            <input type="checkbox" id="track-piano">
+                            <audio id="audio-piano" loop src="https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3"></audio>
+                            <input type="range" id="vol-piano" min="0" max="1" step="0.1" value="0.3">
+                        </div>
+                    </div>
+                    <div class="ambience-row">
+                        <label for="track-fireplace">Fireplace Crackle</label>
+                        <div class="audio-control">
+                            <input type="checkbox" id="track-fireplace">
+                            <audio id="audio-fireplace" loop src="https://assets.mixkit.co/active_storage/sfx/2464/2464-84.wav"></audio>
+                            <input type="range" id="vol-fireplace" min="0" max="1" step="0.1" value="0.4">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Virtual Double Page Book Container -->
+                <div class="book-viewport">
+                    <div class="book-container" id="book-element">
+                        <div class="book-spine"></div>
+
+                        <!-- Left Page: Illustration -->
+                        <div class="book-page left-page" id="book-page-left">
+                            <div class="page-content illustration-container">
+                                <div class="illustration-spinner" id="img-spinner">
+                                    <div class="spinner-ring"></div>
+                                    <span class="spinner-text">Painting illustration...</span>
+                                </div>
+                                <img id="page-illustration" src="" alt="Page Illustration" class="illustration-image hidden">
+                                <div class="illustration-meta">
+                                    <span id="illustration-style-label" class="style-badge">Watercolor</span>
+                                    <button id="btn-regenerate-image" class="btn-regenerate-img" title="Repaint Scene">
+                                        <i class="fa-solid fa-arrows-rotate"></i>
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="page-number-left" id="page-num-left">1</div>
+                        </div>
+
+                        <!-- Right Page: Story Narrative -->
+                        <div class="book-page right-page" id="book-page-right">
+                            <div class="page-content narrative-container">
+                                <h3 id="page-chapter-title" class="page-title">Chapter 1: The Whispers of Youth</h3>
+                                <div id="page-text-container" class="page-narrative">
+                                    <p id="page-narrative-text">Loading the memoir details...</p>
+                                </div>
+                            </div>
+                            <div class="page-number-right" id="page-num-right">2</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Book Navigation Panel -->
+                <div class="book-navigation">
+                    <button id="btn-prev-page" class="btn btn-secondary btn-nav-arrow" disabled>
+                        <i class="fa-solid fa-chevron-left"></i> Previous Page
+                    </button>
+                    <div class="page-progress-slider">
+                        <input type="range" id="book-progress-range" min="0" max="1" value="0" step="1">
+                        <span id="book-progress-text">Page 1 of 6</span>
+                    </div>
+                    <button id="btn-next-page" class="btn btn-secondary btn-nav-arrow">
+                        Next Page <i class="fa-solid fa-chevron-right"></i>
+                    </button>
+                </div>
+            </section>
+        </div>
+    </main>
+
+    <!-- Global Toast System -->
+    <div id="toast-container" class="toast-container"></div>
+
+    <!-- Spinner Loading Overlay -->
+    <div id="loading-overlay" class="loading-overlay hidden">
+        <div class="overlay-spinner-card glass-card">
+            <div class="overlay-spinner"></div>
+            <h3 id="loading-overlay-title">Processing Memories...</h3>
+            <p id="loading-overlay-subtitle">This might take a moment depending on the size of the transcript.</p>
+            <div id="gemini-generation-log" class="generation-log"></div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="gemini.js"></script>
+    <script src="book.js"></script>
+</body>
+</html>
