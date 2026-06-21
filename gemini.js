@@ -1,187 +1,71 @@
 /**
- * Gemini API Service Module
- * Handles client-side API requests to Google Generative AI
+ * LLM Service Module
+ * Sends requests to the local Python (Flask) backend, which calls Vertex AI
+ * via google-genai using Application Default Credentials (ADC). No API key is
+ * needed in the browser — authentication and billing happen server-side.
  */
 
-// Prefer modern Gemini models and gracefully fall back if one is unavailable.
-const GEMINI_MODEL_CANDIDATES = [
-    "gemini-2.5-flash",
-    "gemini-2.0-flash",
-    "gemini-2.0-flash-lite",
-    "gemini-1.5-flash"
-];
-const API_BASE_URL = "https://generativelanguage.googleapis.com/v1beta";
-const GEMINI_REQUEST_TIMEOUT_MS = 30000;
-const LOCAL_STORAGE_API_KEY = "storybook_gemini_key";
-const ENV_API_KEY_NAMES = ["GEMINI_API_KEY"];
+// Where the local backend (backend/server.py) is listening.
+const BACKEND_BASE_URL = "http://127.0.0.1:5000";
+const GEMINI_REQUEST_TIMEOUT_MS = 60000;
 
-let resolvedModel = null;
-let envApiKey = null;
-let envKeyLoadAttempted = false;
+/**
+ * Sends a Gemini-REST-style payload to the backend and returns the parsed
+ * response in the same shape the rest of this module expects
+ * ({ candidates: [{ content: { parts: [{ text }] } }] }).
+ * @param {string} _apiKey Unused (ADC handles auth); kept for call-site compatibility.
+ * @param {Object} payload { contents, generationConfig }
+ */
+async function geminiGenerateContent(_apiKey, payload) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), GEMINI_REQUEST_TIMEOUT_MS);
 
-function normalizeApiKey(value) {
-    if (typeof value !== "string") return null;
-    const trimmed = value.trim();
-    return trimmed ? trimmed : null;
-}
-
-function parseEnvText(envText) {
-    const parsed = {};
-    const lines = envText.split(/\r?\n/);
-
-    for (const rawLine of lines) {
-        const line = rawLine.trim();
-        if (!line || line.startsWith("#")) continue;
-
-        const eqIndex = line.indexOf("=");
-        if (eqIndex <= 0) continue;
-
-        const key = line.slice(0, eqIndex).trim();
-        let value = line.slice(eqIndex + 1).trim();
-
-        if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
-            value = value.slice(1, -1);
-        }
-
-        parsed[key] = value;
-    }
-
-    return parsed;
-}
-
-async function loadApiKeyFromEnv() {
-    if (envKeyLoadAttempted) return envApiKey;
-    envKeyLoadAttempted = true;
-
+    let response;
     try {
-        const response = await fetch(".env", { cache: "no-store" });
-        if (!response.ok) {
-            return null;
-        }
-
-        const envText = await response.text();
-        const parsedEnv = parseEnvText(envText);
-
-        for (const keyName of ENV_API_KEY_NAMES) {
-            const found = normalizeApiKey(parsedEnv[keyName]);
-            if (found) {
-                envApiKey = found;
-                break;
-            }
-        }
+        response = await fetch(`${BACKEND_BASE_URL}/api/generate`, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify(payload),
+            signal: controller.signal
+        });
     } catch (error) {
-        // Local file mode or servers that block dotfiles may fail here.
-        envApiKey = null;
+        if (error && error.name === "AbortError") {
+            throw new Error(`Request timed out after ${Math.floor(GEMINI_REQUEST_TIMEOUT_MS / 1000)} seconds.`);
+        }
+        throw new Error(
+            "Could not reach the local AI backend. Start it with: " +
+            "python3 backend/server.py"
+        );
+    } finally {
+        clearTimeout(timeoutId);
     }
 
-    return envApiKey;
-}
-
-function buildGenerateUrl(model, apiKey) {
-    return `${API_BASE_URL}/models/${model}:generateContent?key=${apiKey}`;
-}
-
-async function resolveAvailableModel(apiKey) {
-    if (resolvedModel) return resolvedModel;
-
-    try {
-        const response = await fetch(`${API_BASE_URL}/models?key=${apiKey}`);
-        if (!response.ok) {
-            throw new Error(`Unable to list models (${response.status})`);
-        }
-
-        const data = await response.json();
-        const models = data.models || [];
-        const supported = models
-            .filter((m) => (m.supportedGenerationMethods || []).includes("generateContent"))
-            .map((m) => (m.name || "").replace("models/", ""));
-
-        for (const candidate of GEMINI_MODEL_CANDIDATES) {
-            if (supported.includes(candidate)) {
-                resolvedModel = candidate;
-                return resolvedModel;
-            }
-        }
-
-        if (supported.length > 0) {
-            resolvedModel = supported[0];
-            return resolvedModel;
-        }
-    } catch (error) {
-        console.warn("Model discovery failed, using fallback candidate list:", error);
-    }
-
-    resolvedModel = GEMINI_MODEL_CANDIDATES[0];
-    return resolvedModel;
-}
-
-async function geminiGenerateContent(apiKey, payload) {
-    const preferredModel = await resolveAvailableModel(apiKey);
-    const tried = [];
-
-    const orderedModels = [
-        preferredModel,
-        ...GEMINI_MODEL_CANDIDATES.filter((m) => m !== preferredModel)
-    ];
-
-    for (const model of orderedModels) {
-        tried.push(model);
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), GEMINI_REQUEST_TIMEOUT_MS);
-
-        let response;
-        try {
-            response = await fetch(buildGenerateUrl(model, apiKey), {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json"
-                },
-                body: JSON.stringify(payload),
-                signal: controller.signal
-            });
-        } catch (error) {
-            if (error && error.name === "AbortError") {
-                throw new Error(`Gemini request timed out after ${Math.floor(GEMINI_REQUEST_TIMEOUT_MS / 1000)} seconds.`);
-            }
-            throw error;
-        } finally {
-            clearTimeout(timeoutId);
-        }
-
-        if (response.ok) {
-            resolvedModel = model;
-            return response.json();
-        }
-
+    if (!response.ok) {
         const errData = await response.json().catch(() => ({}));
         const errMsg = errData.error?.message || response.statusText;
-
-        // Retry another candidate when model is unavailable.
-        const canRetryModel = response.status === 404 && /model|not found|not supported/i.test(errMsg);
-        if (!canRetryModel) {
-            throw new Error(`API Error (${response.status}): ${errMsg}`);
-        }
+        throw new Error(`API Error (${response.status}): ${errMsg}`);
     }
 
-    throw new Error(`No available Gemini model for generateContent. Tried: ${tried.join(", ")}`);
+    return response.json();
 }
 
 /**
- * Retrieves the stored Gemini API key from local storage
- * @returns {string|null} The API key
+ * Auth is handled server-side via ADC, so there is no browser-held key.
+ * These helpers are kept so existing UI code keeps working; getApiKey returns
+ * a truthy sentinel so key-gated flows proceed.
  */
+async function loadApiKeyFromEnv() {
+    return "adc";
+}
+
 function getApiKey() {
-    const localKey = normalizeApiKey(localStorage.getItem(LOCAL_STORAGE_API_KEY));
-    if (localKey) return localKey;
-    return normalizeApiKey(envApiKey);
+    return "adc";
 }
 
-/**
- * Saves the Gemini API key to local storage
- * @param {string} key 
- */
-function saveApiKey(key) {
-    localStorage.setItem(LOCAL_STORAGE_API_KEY, key);
+function saveApiKey(_key) {
+    // No-op: the backend authenticates with Application Default Credentials.
 }
 
 /**
