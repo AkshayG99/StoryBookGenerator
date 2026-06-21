@@ -6,15 +6,27 @@
 document.addEventListener("DOMContentLoaded", () => {
     // --- Application State ---
     const state = {
-        activeStep: 1, // 1: Import, 2: Outline, 3: Book Viewer
+        activeStep: 1, // 1: Import, 2: Interview, 3: Outline, 4: Book Viewer
         isInWizard: false, // Tracks if we are in wizard mode or landing mode
         elderName: "",
+        elderAge: null,
+        elderGender: "",
+        elderEthnicity: "",
         artStyle: "",
         bookLength: 6,
         narrationTone: "",
         sourceTab: "paste",
         transcriptText: "",
         audioFile: null,
+        interviewFlow: null,
+        interviewQuestionCursor: 0,
+        interviewAnswers: {},
+        interviewDecadeSummaries: {},
+        useFallbackSpeech: false,
+        fallbackRecorder: null,
+        fallbackChunks: [],
+        fallbackStream: null,
+        isFallbackRecording: false,
         bookOutline: null,
         generatedBook: null, // { title, subtitle, pages: [{ chapterTitle, narrative, imagePrompt, imageSrc }] }
         currentPageIndex: 0,
@@ -44,7 +56,8 @@ document.addEventListener("DOMContentLoaded", () => {
     const progressIndicators = {
         1: document.getElementById("step-indicator-1"),
         2: document.getElementById("step-indicator-2"),
-        3: document.getElementById("step-indicator-3")
+        3: document.getElementById("step-indicator-3"),
+        4: document.getElementById("step-indicator-4")
     };
     
     // Landing Page Buttons
@@ -53,8 +66,12 @@ document.addEventListener("DOMContentLoaded", () => {
     
     // Panel 1: Import
     const panelStep1 = document.getElementById("panel-step-1");
+    const panelStepInterview = document.getElementById("panel-step-interview");
     const backToLandingBtn = document.getElementById("btn-back-to-landing");
     const elderNameInput = document.getElementById("elder-name");
+    const elderAgeInput = document.getElementById("elder-age");
+    const elderGenderInput = document.getElementById("elder-gender");
+    const elderEthnicityInput = document.getElementById("elder-ethnicity");
     const artStyleSelect = document.getElementById("illustration-style");
     const bookLengthSelect = document.getElementById("book-length");
     const toneSelect = document.getElementById("narration-tone");
@@ -70,6 +87,23 @@ document.addEventListener("DOMContentLoaded", () => {
     const dictationStatus = document.getElementById("dictation-status");
     const dictationPreview = document.getElementById("dictation-preview");
     const generateOutlineBtn = document.getElementById("btn-generate-outline");
+
+    // Panel 2: Interview
+    const interviewDecadePill = document.getElementById("interview-decade-pill");
+    const interviewProgressText = document.getElementById("interview-progress-text");
+    const interviewQuestionTitle = document.getElementById("interview-question-title");
+    const interviewQuestionText = document.getElementById("interview-question-text");
+    const interviewAnswerInput = document.getElementById("interview-answer-input");
+    const interviewRecordBtn = document.getElementById("btn-interview-record");
+    const interviewDictationStatus = document.getElementById("interview-dictation-status");
+    const backToStep1FromInterviewBtn = document.getElementById("btn-back-to-step1-from-interview");
+    const replayInterviewQuestionBtn = document.getElementById("btn-replay-interview-question");
+    const nextInterviewQuestionBtn = document.getElementById("btn-next-interview-question");
+    const finishInterviewBtn = document.getElementById("btn-finish-interview");
+    const suggestAnswerBtn = document.getElementById("btn-suggest-answer");
+    const skipQuestionBtn = document.getElementById("btn-skip-question");
+    const autoAdvanceBadge = document.getElementById("interview-autoadvance");
+    const autoAdvanceNum = autoAdvanceBadge ? autoAdvanceBadge.querySelector(".autoadvance-num") : null;
 
     // Panel 2: Outline
     const panelStep2 = document.getElementById("panel-step-2");
@@ -116,6 +150,121 @@ document.addEventListener("DOMContentLoaded", () => {
     // --- Web Speech API (Speech Recognition) ---
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     let recognition = null;
+    let networkRetryUsed = false;
+    let dictationRetryTimer = null;
+
+    // --- Interview auto-flow timers ---
+    let autoMicTimer = null;
+    let autoMicCountInterval = null;
+    let autoAdvanceTimer = null;
+    let autoAdvanceInterval = null;
+
+    // --- Mic status helpers used by both speech modes ---
+    function setRecordButtonsActive(active) {
+        if (recordBtn) recordBtn.classList.toggle("recording", active);
+        if (interviewRecordBtn) interviewRecordBtn.classList.toggle("recording", active);
+    }
+
+    function setMicStatus(message) {
+        if (dictationStatus) dictationStatus.textContent = message;
+        if (interviewDictationStatus) interviewDictationStatus.textContent = message;
+    }
+
+    function appendToActiveAnswer(text) {
+        const safeText = (text || "").trim();
+        if (!safeText) return;
+        if (state.activeStep === 2 && interviewAnswerInput) {
+            interviewAnswerInput.value += (interviewAnswerInput.value ? " " : "") + safeText;
+        } else {
+            pasteTranscriptArea.value += (pasteTranscriptArea.value ? " " : "") + safeText;
+            state.transcriptText = pasteTranscriptArea.value;
+            if (dictationPreview) {
+                dictationPreview.innerHTML = pasteTranscriptArea.value;
+                dictationPreview.scrollTop = dictationPreview.scrollHeight;
+            }
+        }
+    }
+
+    // --- Gemini MediaRecorder fallback ---
+    async function startFallbackRecorder() {
+        if (state.isFallbackRecording) {
+            // Second tap = stop and transcribe
+            if (state.fallbackRecorder && state.fallbackRecorder.state === "recording") {
+                state.fallbackRecorder.stop();
+            }
+            return;
+        }
+
+        if (!getApiKey()) {
+            settingsModal.classList.remove("hidden");
+            showToast("Gemini API key required for fallback recording.", "error");
+            return;
+        }
+
+        if (!navigator.mediaDevices || !window.MediaRecorder) {
+            showToast("Your browser does not support audio recording.", "error");
+            return;
+        }
+
+        try {
+            state.fallbackChunks = [];
+            state.fallbackStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+            const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+                ? "audio/webm;codecs=opus"
+                : MediaRecorder.isTypeSupported("audio/webm")
+                ? "audio/webm"
+                : "";
+
+            state.fallbackRecorder = mimeType
+                ? new MediaRecorder(state.fallbackStream, { mimeType })
+                : new MediaRecorder(state.fallbackStream);
+
+            state.fallbackRecorder.ondataavailable = (ev) => {
+                if (ev.data && ev.data.size > 0) state.fallbackChunks.push(ev.data);
+            };
+
+            state.fallbackRecorder.onstop = async () => {
+                setRecordButtonsActive(false);
+                state.isFallbackRecording = false;
+                setMicStatus("Transcribing with Gemini...");
+
+                if (state.fallbackStream) {
+                    state.fallbackStream.getTracks().forEach((t) => t.stop());
+                    state.fallbackStream = null;
+                }
+
+                try {
+                    const audioBlob = new Blob(state.fallbackChunks, {
+                        type: state.fallbackRecorder.mimeType || "audio/webm"
+                    });
+                    const transcript = await transcribeSpeechBlob({ audioBlob });
+                    appendToActiveAnswer(transcript);
+                    showToast("Transcribed via Gemini.", "success");
+                    setMicStatus("Got it. Moving on shortly — tap the timer to stay and edit.");
+                    onAnswerCaptured();
+                } catch (err) {
+                    console.error("Gemini fallback transcription failed:", err);
+                    showToast("Transcription failed: " + err.message, "error");
+                    setMicStatus("Transcription failed. Type your answer or retry.");
+                } finally {
+                    state.fallbackRecorder = null;
+                    state.fallbackChunks = [];
+                }
+            };
+
+            state.fallbackRecorder.start();
+            state.isFallbackRecording = true;
+            setRecordButtonsActive(true);
+            setMicStatus("Recording... Tap mic again to stop & transcribe.");
+        } catch (err) {
+            console.error("Fallback recorder failed to start:", err);
+            showToast("Could not access microphone: " + err.message, "error");
+            setMicStatus("Mic unavailable. Type your answer instead.");
+            state.isFallbackRecording = false;
+            setRecordButtonsActive(false);
+        }
+    }
 
     if (SpeechRecognition) {
         recognition = new SpeechRecognition();
@@ -125,19 +274,45 @@ document.addEventListener("DOMContentLoaded", () => {
 
         recognition.onstart = () => {
             state.isRecording = true;
-            recordBtn.classList.add("recording");
-            dictationStatus.textContent = "Listening closely... Speak now.";
+            if (state.activeStep === 2) {
+                if (interviewRecordBtn) interviewRecordBtn.classList.add("recording");
+                if (interviewDictationStatus) interviewDictationStatus.textContent = "Listening... share your answer.";
+            } else {
+                recordBtn.classList.add("recording");
+                dictationStatus.textContent = "Listening closely... Speak now.";
+            }
             showToast("Recording started. Speak clearly.", "info");
         };
 
         recognition.onerror = (event) => {
             console.error("Speech Recognition Error:", event.error);
-            showToast(`Speech error: ${event.error}`, "error");
-            stopDictation();
+
+            const err = event.error || "unknown";
+
+            if (err === "network") {
+                // Edge blocks Bing speech service in many environments - go straight to Gemini fallback
+                stopDictation(false);
+                state.useFallbackSpeech = true;
+                showToast("Edge speech service blocked. Auto-switching to Gemini recording — tap mic to start.", "info");
+                setMicStatus("Gemini mode active. Tap mic to record, tap again to stop & transcribe.");
+                // Auto-start the recorder immediately so user doesn't need to tap again
+                setTimeout(() => startFallbackRecorder(), 300);
+                return;
+            }
+
+            if (err === "not-allowed" || err === "service-not-allowed") {
+                showToast("Microphone permission is blocked. Allow mic access in Edge site settings.", "error");
+            } else if (err === "no-speech") {
+                showToast("No speech detected. Try speaking a bit louder and closer to the microphone.", "info");
+            } else {
+                showToast(`Speech error: ${err}`, "error");
+            }
+
+            stopDictation(false);
         };
 
         recognition.onend = () => {
-            stopDictation();
+            stopDictation(false);
         };
 
         recognition.onresult = (event) => {
@@ -153,13 +328,19 @@ document.addEventListener("DOMContentLoaded", () => {
             }
 
             if (finalTranscript) {
-                pasteTranscriptArea.value += (pasteTranscriptArea.value ? " " : "") + finalTranscript;
-                state.transcriptText = pasteTranscriptArea.value;
+                if (state.activeStep === 2 && interviewAnswerInput) {
+                    interviewAnswerInput.value += (interviewAnswerInput.value ? " " : "") + finalTranscript;
+                } else {
+                    pasteTranscriptArea.value += (pasteTranscriptArea.value ? " " : "") + finalTranscript;
+                    state.transcriptText = pasteTranscriptArea.value;
+                }
             }
 
-            dictationPreview.innerHTML = pasteTranscriptArea.value + 
-                (interimTranscript ? `<span style="opacity: 0.5;"> ${interimTranscript}</span>` : "");
-            dictationPreview.scrollTop = dictationPreview.scrollHeight;
+            if (state.activeStep !== 2) {
+                dictationPreview.innerHTML = pasteTranscriptArea.value + 
+                    (interimTranscript ? `<span style="opacity: 0.5;"> ${interimTranscript}</span>` : "");
+                dictationPreview.scrollTop = dictationPreview.scrollHeight;
+            }
         };
     } else {
         const dictateTabBtn = document.querySelector('[data-target="tab-dictate"]');
@@ -198,14 +379,18 @@ document.addEventListener("DOMContentLoaded", () => {
     };
 
     // --- Setup Initialization ---
-    function init() {
+    async function hydrateApiKeyInput() {
+        await loadApiKeyFromEnv();
         const savedKey = getApiKey();
         if (savedKey) {
             apiKeyInput.value = savedKey;
         }
+    }
 
+    function init() {
         setupEventListeners();
         showLandingPage();
+        hydrateApiKeyInput();
     }
 
     // --- Helper Functions ---
@@ -264,6 +449,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
     function setStep(step) {
         state.activeStep = step;
+
+        // Stop any interview auto-flow when leaving the interview step.
+        if (step !== 2 && typeof clearInterviewTimers === "function") {
+            clearInterviewTimers();
+        }
         
         // Update progress bar
         Object.keys(progressIndicators).forEach(key => {
@@ -279,35 +469,466 @@ document.addEventListener("DOMContentLoaded", () => {
 
         // Toggle panel displays
         panelStep1.classList.remove("active");
+        panelStepInterview.classList.remove("active");
         panelStep2.classList.remove("active");
         panelStep3.classList.remove("active");
 
         if (step === 1) panelStep1.classList.add("active");
-        if (step === 2) panelStep2.classList.add("active");
-        if (step === 3) panelStep3.classList.add("active");
+        if (step === 2) panelStepInterview.classList.add("active");
+        if (step === 3) panelStep2.classList.add("active");
+        if (step === 4) panelStep3.classList.add("active");
 
         window.scrollTo({ top: 0, behavior: "smooth" });
     }
 
     // --- Dictation Control ---
-    function startDictation() {
-        if (!recognition) return;
+    function startDictation({ isRetry = false } = {}) {
+        // If Web Speech previously failed with network error, use Gemini fallback
+        if (state.useFallbackSpeech || !recognition) {
+            startFallbackRecorder();
+            return;
+        }
+
+        if (!isRetry) {
+            networkRetryUsed = false;
+        }
+
+        if (!navigator.onLine) {
+            showToast("You appear to be offline. Switching to Gemini recording fallback.", "error");
+            state.useFallbackSpeech = true;
+            startFallbackRecorder();
+            return;
+        }
+
         try {
-            dictationPreview.textContent = pasteTranscriptArea.value || "Speak now...";
+            if (dictationPreview) dictationPreview.textContent = pasteTranscriptArea.value || "Speak now...";
             recognition.start();
         } catch (e) {
             console.error(e);
+            showToast("Could not start microphone capture. Please try again.", "error");
         }
     }
 
-    function stopDictation() {
+    function stopDictation(shouldStopEngine = true) {
+        // Fallback mode: delegate to fallback recorder
+        if (state.useFallbackSpeech) {
+            if (state.fallbackRecorder && state.fallbackRecorder.state === "recording") {
+                state.fallbackRecorder.stop();
+            }
+            return;
+        }
+
         if (!recognition) return;
+
+        if (dictationRetryTimer) {
+            clearTimeout(dictationRetryTimer);
+            dictationRetryTimer = null;
+        }
+
         state.isRecording = false;
-        recordBtn.classList.remove("recording");
-        dictationStatus.textContent = "Recording stopped. Click microphone to record again.";
+        setRecordButtonsActive(false);
+        setMicStatus("Recording stopped. Click microphone to record again.");
+
+        if (shouldStopEngine) {
+            try {
+                recognition.stop();
+            } catch (e) {}
+        }
+    }
+
+    function computeDecadeRanges(age) {
+        const safeAge = Math.max(1, Math.floor(age || 0));
+        const ranges = [];
+
+        for (let start = 0; start <= safeAge; start += 10) {
+            const end = Math.min(start + 9, safeAge);
+            ranges.push({
+                key: `${start}-${end}`,
+                label: `${start}s (${start}-${end})`,
+                short: `${start}s`,
+                start,
+                end,
+                questionSet: [],
+                loaded: false,
+                probingLoaded: false
+            });
+        }
+
+        return ranges;
+    }
+
+    function getProfilePayload() {
+        return {
+            name: state.elderName,
+            age: state.elderAge,
+            gender: state.elderGender || "Not specified",
+            ethnicity: state.elderEthnicity || "Not specified"
+        };
+    }
+
+    function getCurrentInterviewCursor() {
+        if (!state.interviewFlow || !state.interviewFlow.length) return null;
+
+        let globalIndex = 0;
+        for (let d = 0; d < state.interviewFlow.length; d++) {
+            const decade = state.interviewFlow[d];
+            for (let q = 0; q < decade.questionSet.length; q++) {
+                if (globalIndex === state.interviewQuestionCursor) {
+                    return { decadeIndex: d, questionIndex: q, decade, question: decade.questionSet[q] };
+                }
+                globalIndex++;
+            }
+        }
+
+        return null;
+    }
+
+    function getInterviewTotalQuestions() {
+        if (!state.interviewFlow) return 0;
+        return state.interviewFlow.reduce((sum, decade) => sum + decade.questionSet.length, 0);
+    }
+
+    function buildDefaultQuestionSet(decadeLabel) {
+        return [
+            {
+                id: `${decadeLabel}-base-1`,
+                type: "base",
+                text: `What memories stand out most from your ${decadeLabel}?`
+            },
+            {
+                id: `${decadeLabel}-base-2`,
+                type: "base",
+                text: `Who shaped your life the most during your ${decadeLabel}, and how?`
+            },
+            {
+                id: `${decadeLabel}-base-3`,
+                type: "base",
+                text: `What lessons from your ${decadeLabel} would you want your family to remember?`
+            }
+        ];
+    }
+
+    async function ensureDecadeQuestionsLoaded(decadeIndex) {
+        const decade = state.interviewFlow[decadeIndex];
+        if (!decade || decade.loaded) return;
+
+        const previousDecade = state.interviewFlow[decadeIndex - 1];
+        const previousSummary = previousDecade ? (state.interviewDecadeSummaries[previousDecade.key] || "") : "";
+
         try {
-            recognition.stop();
-        } catch (e) {}
+            const response = await generateDecadeInterviewQuestions({
+                profile: getProfilePayload(),
+                decadeLabel: decade.short,
+                previousDecadeSummary: previousSummary
+            });
+
+            decade.questionSet = (response.questions || []).slice(0, 3).map((text, idx) => ({
+                id: `${decade.key}-base-${idx + 1}`,
+                type: "base",
+                text
+            }));
+            decade.loaded = true;
+        } catch (error) {
+            console.warn("Failed to load decade interview questions:", error);
+            decade.questionSet = buildDefaultQuestionSet(decade.short);
+            decade.loaded = true;
+            showToast("Using fallback interview questions for this decade.", "info");
+        }
+    }
+
+    async function maybeLoadProbingQuestions(decadeIndex) {
+        const decade = state.interviewFlow[decadeIndex];
+        if (!decade || decade.probingLoaded) return;
+
+        const baseQuestions = decade.questionSet.filter((q) => q.type === "base");
+        if (baseQuestions.length < 3) return;
+
+        const hasAnsweredAllBase = baseQuestions.every((question) => {
+            const ans = state.interviewAnswers[question.id];
+            return typeof ans === "string";
+        });
+        if (!hasAnsweredAllBase) return;
+
+        const previousDecade = state.interviewFlow[decadeIndex - 1];
+        const previousSummary = previousDecade ? (state.interviewDecadeSummaries[previousDecade.key] || "") : "";
+
+        const baseQaPairs = baseQuestions.map((question) => ({
+            question: question.text,
+            answer: state.interviewAnswers[question.id] || ""
+        }));
+
+        try {
+            const probing = await generateDecadeProbingQuestions({
+                profile: getProfilePayload(),
+                decadeLabel: decade.short,
+                baseQaPairs,
+                previousDecadeSummary: previousSummary,
+                maxQuestions: 5
+            });
+
+            const probingQuestions = (probing.probingQuestions || []).slice(0, 5).map((text, idx) => ({
+                id: `${decade.key}-probe-${idx + 1}`,
+                type: "probe",
+                text
+            }));
+
+            decade.questionSet = [...decade.questionSet, ...probingQuestions];
+            decade.probingLoaded = true;
+        } catch (error) {
+            console.warn("Failed to load probing questions:", error);
+            decade.probingLoaded = true;
+            showToast("Could not generate probing questions for this decade.", "info");
+        }
+    }
+
+    function buildDecadeSummary(decade) {
+        const lines = decade.questionSet.map((question) => {
+            const answer = (state.interviewAnswers[question.id] || "").trim();
+            if (!answer) return null;
+            return `${question.text} ${answer}`;
+        }).filter(Boolean);
+
+        return lines.join(" ").slice(0, 420);
+    }
+
+    function buildInterviewTranscript() {
+        const sections = [];
+        sections.push(`Narrator profile: ${state.elderName}, age ${state.elderAge}, gender ${state.elderGender || "not specified"}, background ${state.elderEthnicity || "not specified"}.`);
+
+        if (state.transcriptText && state.transcriptText.trim()) {
+            sections.push(`Preloaded notes/transcript:\n${state.transcriptText.trim()}`);
+        }
+
+        state.interviewFlow.forEach((decade) => {
+            const qaLines = [];
+            decade.questionSet.forEach((question) => {
+                const answer = (state.interviewAnswers[question.id] || "").trim();
+                if (!answer) return;
+                qaLines.push(`Q: ${question.text}\nA: ${answer}`);
+            });
+
+            if (qaLines.length) {
+                sections.push(`${decade.label}\n${qaLines.join("\n\n")}`);
+            }
+        });
+
+        return sections.join("\n\n");
+    }
+
+    async function initializeInterviewFlow() {
+        state.interviewFlow = computeDecadeRanges(state.elderAge);
+        state.interviewQuestionCursor = 0;
+        state.interviewAnswers = {};
+        state.interviewDecadeSummaries = {};
+
+        loadingOverlayTitle.textContent = "Preparing Interview...";
+        loadingOverlaySubtitle.textContent = "Generating decade-specific starter questions.";
+        loadingOverlay.classList.remove("hidden");
+
+        await ensureDecadeQuestionsLoaded(0);
+        loadingOverlay.classList.add("hidden");
+        renderInterviewQuestion();
+    }
+
+    function renderInterviewQuestion() {
+        clearInterviewTimers();
+        const cursor = getCurrentInterviewCursor();
+        const total = getInterviewTotalQuestions();
+
+        if (!cursor) {
+            if (interviewQuestionTitle) interviewQuestionTitle.textContent = "Interview Complete";
+            interviewQuestionText.textContent = "That's everything for now. Tap \"Finish & Build Book\" whenever you're ready.";
+            interviewProgressText.textContent = `Question ${Math.min(state.interviewQuestionCursor + 1, total)} of ${total}`;
+            interviewDecadePill.textContent = "All done";
+            interviewAnswerInput.value = "";
+            setMicStatus("Interview complete. You can review answers or build the book.");
+            return;
+        }
+
+        if (interviewQuestionTitle) {
+            interviewQuestionTitle.textContent = cursor.question.type === "probe" ? "Follow-up question" : "Question";
+        }
+        interviewQuestionText.textContent = cursor.question.text;
+        interviewProgressText.textContent = `Question ${state.interviewQuestionCursor + 1} of ${total}`;
+        interviewDecadePill.textContent = cursor.decade.label;
+        interviewAnswerInput.value = state.interviewAnswers[cursor.question.id] || "";
+
+        // Human auto-flow: read the question aloud, then auto-arm the microphone.
+        speakQuestionThenArmMic(cursor.question.text);
+    }
+
+    // --- Interview auto-flow (read aloud -> auto mic -> auto advance) ---
+    function clearInterviewTimers() {
+        if (autoMicTimer) { clearTimeout(autoMicTimer); autoMicTimer = null; }
+        if (autoMicCountInterval) { clearInterval(autoMicCountInterval); autoMicCountInterval = null; }
+        if (autoAdvanceTimer) { clearTimeout(autoAdvanceTimer); autoAdvanceTimer = null; }
+        if (autoAdvanceInterval) { clearInterval(autoAdvanceInterval); autoAdvanceInterval = null; }
+        hideAutoAdvanceBadge();
+    }
+
+    function speakQuestionThenArmMic(text) {
+        if (!window.speechSynthesis) {
+            armMicCountdown();
+            return;
+        }
+        stopSpeech();
+        const utt = new SpeechSynthesisUtterance(text);
+        utt.rate = 0.92;
+        utt.pitch = 1;
+
+        const voices = window.speechSynthesis.getVoices();
+        const chosen = voices.find(v => v.name.includes("Google US English") || v.name.includes("Samantha") || v.lang === "en-US");
+        if (chosen) utt.voice = chosen;
+
+        utt.onend = () => armMicCountdown();
+        utt.onerror = () => armMicCountdown();
+        state.speechUtterance = utt;
+        setMicStatus("Listening to the question…");
+        window.speechSynthesis.speak(utt);
+    }
+
+    function armMicCountdown() {
+        // Don't auto-start if user already answered or moved on.
+        if (state.activeStep !== 2) return;
+        if (state.isRecording || state.isFallbackRecording) return;
+
+        let count = 3;
+        setMicStatus(`Get ready… your microphone turns on in ${count}…`);
+        autoMicCountInterval = setInterval(() => {
+            count -= 1;
+            if (count > 0) {
+                setMicStatus(`Get ready… your microphone turns on in ${count}…`);
+            }
+        }, 1000);
+
+        autoMicTimer = setTimeout(() => {
+            if (autoMicCountInterval) { clearInterval(autoMicCountInterval); autoMicCountInterval = null; }
+            if (state.activeStep === 2 && !state.isRecording && !state.isFallbackRecording) {
+                setMicStatus("Microphone on — share your answer, then tap the mic to finish.");
+                startDictation();
+            }
+        }, 3000);
+    }
+
+    // Called once an answer has been captured (voice transcription complete).
+    function onAnswerCaptured() {
+        if (state.activeStep !== 2) return;
+        if (!interviewAnswerInput.value.trim()) return;
+        startAutoAdvanceCountdown();
+    }
+
+    function startAutoAdvanceCountdown() {
+        clearInterviewTimers();
+        if (!autoAdvanceBadge) return;
+
+        let remaining = 5;
+        showAutoAdvanceBadge(remaining);
+
+        autoAdvanceInterval = setInterval(() => {
+            remaining -= 1;
+            if (remaining <= 0) {
+                clearInterval(autoAdvanceInterval);
+                autoAdvanceInterval = null;
+                hideAutoAdvanceBadge();
+                goToNextInterviewQuestion();
+            } else {
+                if (autoAdvanceNum) autoAdvanceNum.textContent = String(remaining);
+            }
+        }, 1000);
+    }
+
+    function showAutoAdvanceBadge(seconds) {
+        if (!autoAdvanceBadge) return;
+        if (autoAdvanceNum) autoAdvanceNum.textContent = String(seconds);
+        autoAdvanceBadge.classList.remove("hidden");
+        autoAdvanceBadge.classList.add("counting");
+    }
+
+    function hideAutoAdvanceBadge() {
+        if (!autoAdvanceBadge) return;
+        autoAdvanceBadge.classList.add("hidden");
+        autoAdvanceBadge.classList.remove("counting");
+    }
+
+    async function goToNextInterviewQuestion() {
+        const cursor = getCurrentInterviewCursor();
+        if (!cursor) return;
+
+        clearInterviewTimers();
+        stopSpeech();
+        if (state.isRecording || state.isFallbackRecording) stopDictation(true);
+
+        if (nextInterviewQuestionBtn) nextInterviewQuestionBtn.disabled = true;
+        try {
+            const answer = interviewAnswerInput.value.trim();
+            state.interviewAnswers[cursor.question.id] = answer;
+
+            if (cursor.question.type === "base") {
+                await maybeLoadProbingQuestions(cursor.decadeIndex);
+            }
+
+            const decade = state.interviewFlow[cursor.decadeIndex];
+            const isLastQuestionInDecade = cursor.questionIndex === decade.questionSet.length - 1;
+            if (isLastQuestionInDecade) {
+                state.interviewDecadeSummaries[decade.key] = buildDecadeSummary(decade);
+                if (cursor.decadeIndex + 1 < state.interviewFlow.length) {
+                    await ensureDecadeQuestionsLoaded(cursor.decadeIndex + 1);
+                }
+            }
+
+            state.interviewQuestionCursor += 1;
+            renderInterviewQuestion();
+        } finally {
+            if (nextInterviewQuestionBtn) nextInterviewQuestionBtn.disabled = false;
+        }
+    }
+
+    async function generateOutlineFromInterview() {
+        const combinedTranscript = buildInterviewTranscript();
+        const hasAnsweredQuestions = Object.values(state.interviewAnswers)
+            .some((answer) => typeof answer === "string" && answer.trim().length > 0);
+        const hasPreloadedText = !!pasteTranscriptArea.value.trim();
+        const hasUploadedMedia = !!state.audioFile;
+
+        if (!hasAnsweredQuestions && !hasPreloadedText && !hasUploadedMedia) {
+            showToast("Please answer at least one interview question before continuing.", "error");
+            return;
+        }
+
+        state.transcriptText = combinedTranscript;
+
+        generationLog.innerHTML = "";
+        loadingOverlayTitle.textContent = "Analyzing Memories...";
+        loadingOverlaySubtitle.textContent = "The editor is organizing decade interviews into a memoir structure.";
+        loadingOverlay.classList.remove("hidden");
+
+        try {
+            addLog("Compiling interview transcript...", "info");
+
+            const outline = await generateBookOutline({
+                elderName: state.elderName,
+                numPages: state.bookLength,
+                tone: state.narrationTone,
+                artStyle: state.artStyle,
+                transcriptText: state.transcriptText,
+                audioFile: state.sourceTab === "upload" ? state.audioFile : null
+            }, (msg) => addLog(msg, "info"));
+
+            state.bookOutline = outline;
+            addLog("Outline created successfully!", "success");
+
+            setTimeout(() => {
+                loadingOverlay.classList.add("hidden");
+                renderOutlineEditor();
+                setStep(3);
+            }, 1000);
+        } catch (error) {
+            addLog(`Analysis failed: ${error.message}`, "error");
+            showToast(`Generation error: ${error.message}`, "error");
+            setTimeout(() => {
+                loadingOverlay.classList.add("hidden");
+            }, 2500);
+        }
     }
 
     // --- File Drop Zone Handlers ---
@@ -355,7 +976,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 logoHome.style.cursor = "pointer";
                 
                 renderVirtualBook();
-                setStep(3);
+                setStep(4);
                 showToast("Sample memoir book loaded. Flip through pages or try reading aloud!", "success");
             });
         }
@@ -516,6 +1137,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
         generateOutlineBtn.addEventListener("click", async () => {
             state.elderName = elderNameInput.value.trim();
+            state.elderAge = parseInt(elderAgeInput.value, 10);
+            state.elderGender = elderGenderInput.value.trim();
+            state.elderEthnicity = elderEthnicityInput.value.trim();
             state.artStyle = artStyleSelect.value;
             state.bookLength = parseInt(bookLengthSelect.value);
             state.narrationTone = toneSelect.value;
@@ -533,54 +1157,175 @@ document.addEventListener("DOMContentLoaded", () => {
                 return;
             }
 
+            if (!Number.isInteger(state.elderAge) || state.elderAge < 1 || state.elderAge > 120) {
+                showToast("Please enter a valid narrator age (1-120).", "error");
+                elderAgeInput.focus();
+                return;
+            }
+
             let hasInputContent = false;
             if (state.sourceTab === "paste" && state.transcriptText) hasInputContent = true;
             if (state.sourceTab === "upload" && state.audioFile) hasInputContent = true;
             if (state.sourceTab === "dictate" && state.transcriptText) hasInputContent = true;
 
             if (!hasInputContent) {
-                showToast("Please provide story content by pasting transcripts, dictating speech, or uploading a file.", "error");
-                return;
+                showToast("No preloaded transcript detected. We will build the story from guided interview answers.", "info");
             }
 
-            generationLog.innerHTML = "";
-            loadingOverlayTitle.textContent = "Analyzing Memories...";
-            loadingOverlaySubtitle.textContent = "The editor is organizing the recollections into chronological milestones.";
-            loadingOverlay.classList.remove("hidden");
-
             try {
-                addLog("Analyzing transcripts...", "info");
-                
-                const outline = await generateBookOutline({
-                    elderName: state.elderName,
-                    numPages: state.bookLength,
-                    tone: state.narrationTone,
-                    artStyle: state.artStyle,
-                    transcriptText: (state.sourceTab === "upload" ? null : state.transcriptText),
-                    audioFile: (state.sourceTab === "upload" ? state.audioFile : null)
-                }, (msg) => addLog(msg, "info"));
-
-                state.bookOutline = outline;
-                addLog("Outline created successfully!", "success");
-                
-                setTimeout(() => {
-                    loadingOverlay.classList.add("hidden");
-                    renderOutlineEditor();
-                    setStep(2);
-                }, 1000);
-
+                await initializeInterviewFlow();
+                setStep(2);
+                showToast("Interview ready. Start answering decade-by-decade questions.", "success");
             } catch (error) {
-                addLog(`Analysis failed: ${error.message}`, "error");
-                showToast(`Generation error: ${error.message}`, "error");
-                setTimeout(() => {
-                    loadingOverlay.classList.add("hidden");
-                }, 4000);
+                showToast(`Could not start interview: ${error.message}`, "error");
             }
         });
 
+        if (backToStep1FromInterviewBtn) {
+            backToStep1FromInterviewBtn.addEventListener("click", () => {
+                clearInterviewTimers();
+                stopSpeech();
+                if (state.isRecording || state.isFallbackRecording) stopDictation();
+                setStep(1);
+            });
+        }
+
+        if (replayInterviewQuestionBtn) {
+            replayInterviewQuestionBtn.addEventListener("click", () => {
+                const cursor = getCurrentInterviewCursor();
+                if (!cursor || !cursor.question) return;
+
+                clearInterviewTimers();
+                stopSpeech();
+                state.speechUtterance = new SpeechSynthesisUtterance(cursor.question.text);
+                state.speechUtterance.rate = 0.92;
+                state.speechUtterance.pitch = 1;
+                state.speechUtterance.onend = () => armMicCountdown();
+                window.speechSynthesis.speak(state.speechUtterance);
+            });
+        }
+
+        if (interviewRecordBtn) {
+            interviewRecordBtn.addEventListener("click", () => {
+                // Any manual mic interaction cancels pending auto-timers.
+                if (autoMicTimer) { clearTimeout(autoMicTimer); autoMicTimer = null; }
+                if (autoMicCountInterval) { clearInterval(autoMicCountInterval); autoMicCountInterval = null; }
+                if (autoAdvanceInterval) { clearInterval(autoAdvanceInterval); autoAdvanceInterval = null; hideAutoAdvanceBadge(); }
+
+                const wasWebSpeechRecording = state.isRecording && !state.useFallbackSpeech;
+
+                if (state.isRecording || state.isFallbackRecording) {
+                    stopDictation();
+                    // Web Speech transcribes live, so an answer is ready now.
+                    if (wasWebSpeechRecording) {
+                        setTimeout(() => onAnswerCaptured(), 400);
+                    }
+                } else {
+                    startDictation();
+                }
+            });
+        }
+
+        if (suggestAnswerBtn) {
+            suggestAnswerBtn.addEventListener("click", async () => {
+                const cursor = getCurrentInterviewCursor();
+                if (!cursor || !cursor.question) return;
+
+                clearInterviewTimers();
+                stopSpeech();
+                if (state.isRecording || state.isFallbackRecording) stopDictation();
+
+                if (!getApiKey()) {
+                    settingsModal.classList.remove("hidden");
+                    showToast("Add your Gemini key first to use Answer with AI.", "error");
+                    return;
+                }
+
+                suggestAnswerBtn.disabled = true;
+                const originalLabel = suggestAnswerBtn.innerHTML;
+                suggestAnswerBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Thinking…`;
+                setMicStatus("Drafting an answer you can edit…");
+
+                try {
+                    const prevDecade = state.interviewFlow[cursor.decadeIndex - 1];
+                    const prevSummary = prevDecade ? (state.interviewDecadeSummaries[prevDecade.key] || "") : "";
+                    const suggestion = await suggestInterviewAnswer({
+                        profile: getProfilePayload(),
+                        decadeLabel: cursor.decade.short,
+                        question: cursor.question.text,
+                        previousDecadeSummary: prevSummary
+                    });
+                    interviewAnswerInput.value = suggestion;
+                    setMicStatus("AI drafted an answer — edit it, or tap Save & Next.");
+                } catch (err) {
+                    console.error("Answer with AI failed:", err);
+                    showToast("Could not draft an answer: " + err.message, "error");
+                    setMicStatus("Couldn't draft an answer. Type or record instead.");
+                } finally {
+                    suggestAnswerBtn.disabled = false;
+                    suggestAnswerBtn.innerHTML = originalLabel;
+                }
+            });
+        }
+
+        if (skipQuestionBtn) {
+            skipQuestionBtn.addEventListener("click", () => {
+                const cursor = getCurrentInterviewCursor();
+                if (!cursor) return;
+                clearInterviewTimers();
+                stopSpeech();
+                if (state.isRecording || state.isFallbackRecording) stopDictation();
+                interviewAnswerInput.value = "";
+                goToNextInterviewQuestion();
+            });
+        }
+
+        if (autoAdvanceBadge) {
+            autoAdvanceBadge.addEventListener("click", () => {
+                // User wants to stay and review/edit this answer.
+                if (autoAdvanceInterval) { clearInterval(autoAdvanceInterval); autoAdvanceInterval = null; }
+                hideAutoAdvanceBadge();
+                setMicStatus("Staying here. Edit your answer, then tap Save & Next.");
+                interviewAnswerInput.focus();
+            });
+        }
+
+        // Typing manually cancels the auto-mic arming so it doesn't interrupt.
+        if (interviewAnswerInput) {
+            interviewAnswerInput.addEventListener("input", () => {
+                if (autoMicTimer) { clearTimeout(autoMicTimer); autoMicTimer = null; }
+                if (autoMicCountInterval) { clearInterval(autoMicCountInterval); autoMicCountInterval = null; }
+            });
+        }
+
+        if (nextInterviewQuestionBtn) {
+            nextInterviewQuestionBtn.addEventListener("click", async () => {
+                const cursor = getCurrentInterviewCursor();
+                if (!cursor) {
+                    showToast("No active question. Tap Finish & Build Book to continue.", "info");
+                    return;
+                }
+                await goToNextInterviewQuestion();
+            });
+        }
+
+        if (finishInterviewBtn) {
+            finishInterviewBtn.addEventListener("click", async () => {
+                clearInterviewTimers();
+                stopSpeech();
+                if (state.isRecording || state.isFallbackRecording) stopDictation();
+                finishInterviewBtn.disabled = true;
+                try {
+                    await generateOutlineFromInterview();
+                } finally {
+                    finishInterviewBtn.disabled = false;
+                }
+            });
+        }
+
         // --- Step 2 Navigation ---
         backToStep1Btn.addEventListener("click", () => {
-            setStep(1);
+            setStep(2);
         });
 
         generateBookBtn.addEventListener("click", async () => {
@@ -631,7 +1376,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     elderName: state.elderName,
                     tone: state.narrationTone,
                     artStyle: state.artStyle,
-                    transcriptText: (state.sourceTab === "upload" ? null : state.transcriptText),
+                    transcriptText: state.transcriptText,
                     audioFile: (state.sourceTab === "upload" ? state.audioFile : null),
                     chaptersEdited: chaptersEdited
                 }, (msg) => addLog(msg, "info"));
@@ -662,7 +1407,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 setTimeout(() => {
                     loadingOverlay.classList.add("hidden");
                     renderVirtualBook();
-                    setStep(3);
+                    setStep(4);
                 }, 1200);
 
             } catch (error) {

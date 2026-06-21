@@ -724,7 +724,7 @@ body.theme-dark .card-badge {
     display: flex;
     align-items: center;
     justify-content: center;
-    max-width: 500px;
+    max-width: 700px;
     width: 100%;
     margin: 0 auto 1rem auto;
 }
@@ -852,6 +852,16 @@ body.theme-dark .card-badge {
     gap: 1rem;
 }
 
+.form-row-3 {
+    grid-template-columns: 0.7fr 1fr 1.4fr;
+}
+
+@media (max-width: 980px) {
+    .form-row-3 {
+        grid-template-columns: 1fr;
+    }
+}
+
 label {
     font-size: 0.72rem;
     font-weight: 700;
@@ -861,6 +871,7 @@ label {
 }
 
 input[type="text"],
+input[type="number"],
 input[type="password"],
 select,
 textarea {
@@ -875,6 +886,7 @@ textarea {
 }
 
 body.theme-dark input[type="text"],
+body.theme-dark input[type="number"],
 body.theme-dark input[type="password"],
 body.theme-dark select,
 body.theme-dark textarea {
@@ -882,6 +894,7 @@ body.theme-dark textarea {
 }
 
 input[type="text"]:focus,
+input[type="number"]:focus,
 input[type="password"]:focus,
 select:focus,
 textarea:focus {
@@ -891,6 +904,7 @@ textarea:focus {
 }
 
 body.theme-dark input[type="text"]:focus,
+body.theme-dark input[type="number"]:focus,
 body.theme-dark input[type="password"]:focus,
 body.theme-dark select:focus,
 body.theme-dark textarea:focus {
@@ -1110,6 +1124,243 @@ body.theme-dark .tab-btn.active {
     max-height: 150px;
     overflow-y: auto;
     background: rgba(0, 0, 0, 0.01);
+}
+
+/* Interview Step */
+.visually-hidden {
+    position: absolute !important;
+    width: 1px; height: 1px;
+    padding: 0; margin: -1px;
+    overflow: hidden; clip: rect(0,0,0,0);
+    white-space: nowrap; border: 0;
+}
+
+.interview-card {
+    position: relative;
+    max-width: 720px;
+    margin: 0 auto;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 1.4rem;
+    padding: 2rem 2.2rem;
+}
+
+.interview-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+}
+
+.interview-decade {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: var(--color-gold);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.interview-progress {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    font-weight: 600;
+}
+
+.interview-question {
+    text-align: center;
+    padding: 0.5rem 0 0.2rem;
+}
+
+.interview-question p {
+    font-family: 'EB Garamond', serif;
+    font-size: 1.8rem;
+    line-height: 1.4;
+    color: var(--text-primary);
+    margin-bottom: 1rem;
+}
+
+.interview-listen {
+    background: transparent;
+    border: 1px solid var(--border-card);
+    border-radius: 20px;
+    padding: 0.4rem 1rem;
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: var(--transition-smooth);
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+}
+
+.interview-listen:hover {
+    color: var(--text-primary);
+    border-color: var(--text-secondary);
+}
+
+.interview-answer {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.interview-answer textarea {
+    width: 100%;
+    font-family: 'EB Garamond', serif;
+    font-size: 1.2rem;
+    line-height: 1.5;
+    min-height: 130px;
+    border: 1px solid var(--border-card);
+    background: rgba(0, 0, 0, 0.015);
+}
+
+.interview-mic-status {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    min-height: 1.2em;
+    text-align: center;
+}
+
+.interview-controls {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+
+.btn-record-lg {
+    width: 72px;
+    height: 72px;
+    border-radius: 50%;
+    background: rgba(255, 69, 58, 0.08);
+    border: 1px solid rgba(255, 69, 58, 0.2);
+    color: var(--color-error);
+    font-size: 1.7rem;
+    cursor: pointer;
+    transition: var(--transition-smooth);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.btn-record-lg:hover {
+    background: rgba(255, 69, 58, 0.14);
+    transform: translateY(-1px);
+}
+
+.btn-record-lg.recording {
+    background: var(--color-error);
+    color: #fff;
+    box-shadow: 0 0 18px rgba(255, 69, 58, 0.4);
+    animation: pulse 1.5s infinite;
+}
+
+.btn-ghost {
+    background: transparent;
+    color: var(--text-secondary);
+    border: 1px solid transparent;
+}
+
+.btn-ghost:hover {
+    background: rgba(0, 0, 0, 0.04);
+    color: var(--text-primary);
+}
+
+body.theme-dark .btn-ghost:hover {
+    background: rgba(255, 255, 255, 0.06);
+}
+
+.interview-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.8rem;
+    flex-wrap: wrap;
+    border-top: 1px solid var(--border-card);
+    padding-top: 1.2rem;
+}
+
+/* Auto-advance countdown badge */
+.autoadvance-badge {
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    background: var(--color-primary);
+    color: var(--color-btn-text-primary);
+    border: none;
+    border-radius: 30px;
+    padding: 0.5rem 0.9rem 0.5rem 0.6rem;
+    cursor: pointer;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.18);
+    animation: badgePop 0.3s ease-out;
+    z-index: 5;
+}
+
+.autoadvance-badge.hidden {
+    display: none;
+}
+
+.autoadvance-num {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.18);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 1rem;
+    flex-shrink: 0;
+}
+
+body.theme-dark .autoadvance-num {
+    background: rgba(0,0,0,0.18);
+}
+
+.autoadvance-text {
+    font-size: 0.72rem;
+    font-weight: 600;
+    line-height: 1.2;
+    text-align: left;
+    opacity: 0.92;
+}
+
+@keyframes badgePop {
+    from { transform: scale(0.8); opacity: 0; }
+    to { transform: scale(1); opacity: 1; }
+}
+
+@media (max-width: 700px) {
+    .interview-card {
+        padding: 1.4rem 1.2rem;
+    }
+
+    .interview-question p {
+        font-size: 1.45rem;
+    }
+
+    .interview-footer {
+        flex-direction: column;
+    }
+
+    .interview-footer .btn {
+        width: 100%;
+    }
+
+    .autoadvance-badge {
+        top: 0.6rem;
+        right: 0.6rem;
+    }
 }
 
 /* --- Panel 2: Outline Editor --- */

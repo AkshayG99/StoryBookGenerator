@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Echoes of a Lifetime - Interactive Memoir Book Creator</title>
     <meta name="description" content="Transform interviews, voice recordings, and memories of elderly family members into beautiful, illustrated storybooks. An artisanal virtual book workshop.">
+    <link rel="icon" href="data:,">
     
     <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -234,11 +235,16 @@
                 <div class="progress-line"></div>
                 <div class="progress-step" id="step-indicator-2">
                     <span class="step-num">2</span>
-                    <span class="step-label">Refine Outline</span>
+                    <span class="step-label">Interview</span>
                 </div>
                 <div class="progress-line"></div>
                 <div class="progress-step" id="step-indicator-3">
                     <span class="step-num">3</span>
+                    <span class="step-label">Refine Outline</span>
+                </div>
+                <div class="progress-line"></div>
+                <div class="progress-step" id="step-indicator-4">
+                    <span class="step-num">4</span>
                     <span class="step-label">Storybook</span>
                 </div>
             </div>
@@ -258,6 +264,21 @@
                         <div class="form-group">
                             <label for="elder-name">Narrator's Name</label>
                             <input type="text" id="elder-name" placeholder="e.g. Grandpa Joseph" required>
+                        </div>
+
+                        <div class="form-row form-row-3">
+                            <div class="form-group">
+                                <label for="elder-age">Narrator Age</label>
+                                <input type="number" id="elder-age" min="1" max="120" placeholder="e.g. 78" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="elder-gender">Gender</label>
+                                <input type="text" id="elder-gender" placeholder="e.g. Woman">
+                            </div>
+                            <div class="form-group">
+                                <label for="elder-ethnicity">Ethnicity / Cultural Background</label>
+                                <input type="text" id="elder-ethnicity" placeholder="e.g. Punjabi Indian">
+                            </div>
                         </div>
 
                         <div class="form-row">
@@ -345,8 +366,57 @@
                 <div class="panel-actions flex-between">
                     <button id="btn-back-to-landing" class="btn btn-secondary"><i class="fa-solid fa-arrow-left"></i> Home</button>
                     <button id="btn-generate-outline" class="btn btn-primary">
-                        <i class="fa-solid fa-wand-magic-sparkles"></i> Weave Outline
+                        <i class="fa-solid fa-comments"></i> Start Guided Interview
                     </button>
+                </div>
+            </section>
+
+            <!-- Wizard Panel 2: Decade Interview -->
+            <section id="panel-step-interview" class="wizard-panel">
+                <div class="interview-card glass-card">
+                    <!-- Auto-advance countdown badge (top-right corner) -->
+                    <div id="interview-autoadvance" class="autoadvance-badge hidden" role="button" tabindex="0" title="Tap to stay on this question">
+                        <span class="autoadvance-num">5</span>
+                        <span class="autoadvance-text">Next question<br>tap to stay</span>
+                    </div>
+
+                    <div class="interview-top">
+                        <span id="interview-decade-pill" class="interview-decade">Loading…</span>
+                        <span id="interview-progress-text" class="interview-progress">Question 0 of 0</span>
+                    </div>
+
+                    <div class="interview-question">
+                        <p id="interview-question-text">Preparing your personalized interview…</p>
+                        <button id="btn-replay-interview-question" class="interview-listen" type="button">
+                            <i class="fa-solid fa-volume-high"></i> Hear it again
+                        </button>
+                    </div>
+
+                    <div class="interview-answer">
+                        <textarea id="interview-answer-input" rows="5" placeholder="Your answer appears here. Speak, type, or let AI help…"></textarea>
+                        <div id="interview-dictation-status" class="interview-mic-status">Listen to the question, then share your answer.</div>
+                    </div>
+
+                    <div class="interview-controls">
+                        <button id="btn-interview-record" class="btn-record-lg" type="button" title="Speak your answer">
+                            <i class="fa-solid fa-microphone"></i>
+                        </button>
+                        <button id="btn-suggest-answer" class="btn btn-secondary" type="button">
+                            <i class="fa-solid fa-wand-magic-sparkles"></i> Answer with AI
+                        </button>
+                        <button id="btn-skip-question" class="btn btn-ghost" type="button">
+                            <i class="fa-solid fa-forward"></i> Skip
+                        </button>
+                    </div>
+
+                    <!-- Hidden title element kept for compatibility with scripts -->
+                    <h3 id="interview-question-title" class="visually-hidden">Question</h3>
+
+                    <div class="interview-footer">
+                        <button id="btn-back-to-step1-from-interview" class="btn btn-ghost"><i class="fa-solid fa-arrow-left"></i> Back</button>
+                        <button id="btn-next-interview-question" class="btn btn-primary">Save &amp; Next <i class="fa-solid fa-arrow-right"></i></button>
+                        <button id="btn-finish-interview" class="btn btn-secondary"><i class="fa-solid fa-check"></i> Finish &amp; Build Book</button>
+                    </div>
                 </div>
             </section>
 
