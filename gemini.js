@@ -55,28 +55,37 @@ async function geminiGenerateContent(_apiKey, payload) {
  * VOICE — Chirp 3: HD text-to-speech via the backend.
  * ========================================================================== */
 
-let _ttsAudio = null; // The single <audio> element we reuse for the agent voice.
+let _ttsAudio = null;      // The single <audio> element we reuse for the agent voice.
+let _ttsToken = 0;         // Bumped on every new/stop request to invalidate stale ones.
+let _ttsController = null;  // AbortController for the in-flight /api/tts fetch.
+let _ttsResolve = null;     // Resolver for the active playback promise (so stop settles it).
 
 /**
  * Synthesizes warm, natural speech with a Chirp 3 HD voice and plays it.
  * Resolves when playback finishes (or immediately if it can't play).
+ * Only ONE utterance can be active at a time — starting a new one (or calling
+ * stopChirp) cancels any pending request or playing audio so they never overlap.
  * @param {string} text
- * @param {Object} [opts] { voice, rate, onStart, onEnd, signal }
+ * @param {Object} [opts] { voice, rate, onStart, onEnd }
  * @returns {Promise<void>}
  */
 async function speakWithChirp(text, opts = {}) {
     const clean = (text || "").trim();
     if (!clean) return;
 
-    // Stop anything currently playing first.
+    // Stop anything currently playing or pending, and claim this generation.
     stopChirp();
+    const myToken = ++_ttsToken;
+    const controller = new AbortController();
+    _ttsController = controller;
 
     let data;
     try {
         const response = await fetch(`${BACKEND_BASE_URL}/api/tts`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ text: clean, voice: opts.voice, rate: opts.rate })
+            body: JSON.stringify({ text: clean, voice: opts.voice, rate: opts.rate }),
+            signal: controller.signal
         });
         if (!response.ok) {
             const err = await response.json().catch(() => ({}));
@@ -84,17 +93,34 @@ async function speakWithChirp(text, opts = {}) {
         }
         data = await response.json();
     } catch (error) {
-        console.warn("Chirp TTS failed, falling back to browser speech:", error);
-        return browserSpeak(clean, opts);
+        // Superseded/cancelled: stay silent and don't fire onEnd side effects.
+        if (myToken !== _ttsToken || (error && error.name === "AbortError")) {
+            return;
+        }
+        // Gemini-only voice: no browser fallback. Log and end gracefully.
+        console.warn("Chirp TTS failed:", error);
+        if (typeof opts.onEnd === "function") opts.onEnd();
+        return;
     }
 
+    // A newer request (or stop) happened while we were fetching — discard this one.
+    if (myToken !== _ttsToken) return;
+
     return new Promise((resolve) => {
+        // If this utterance was superseded between fetch and play, abort quietly.
+        if (myToken !== _ttsToken) {
+            resolve();
+            return;
+        }
         const audio = new Audio(`data:${data.mimeType || "audio/mpeg"};base64,${data.audioContent}`);
         _ttsAudio = audio;
+        _ttsResolve = resolve;
         let settled = false;
         const finish = () => {
             if (settled) return;
             settled = true;
+            if (_ttsAudio === audio) _ttsAudio = null;
+            if (_ttsResolve === resolve) _ttsResolve = null;
             if (typeof opts.onEnd === "function") opts.onEnd();
             resolve();
         };
@@ -105,34 +131,26 @@ async function speakWithChirp(text, opts = {}) {
     });
 }
 
-/** Stops any in-progress agent speech (both Chirp audio and browser TTS). */
+/** Stops any in-progress agent speech (pending request, Chirp audio, and browser TTS). */
 function stopChirp() {
+    // Invalidate any pending/playing utterance.
+    _ttsToken++;
+    if (_ttsController) {
+        try { _ttsController.abort(); } catch (_) { /* ignore */ }
+        _ttsController = null;
+    }
     if (_ttsAudio) {
         try { _ttsAudio.pause(); } catch (_) { /* ignore */ }
         _ttsAudio.onended = null;
         _ttsAudio.onerror = null;
         _ttsAudio = null;
     }
-    if (typeof window !== "undefined" && window.speechSynthesis) {
-        window.speechSynthesis.cancel();
+    // Settle any pending playback promise so awaiting callers don't hang.
+    if (_ttsResolve) {
+        const r = _ttsResolve;
+        _ttsResolve = null;
+        r();
     }
-}
-
-/** Last-resort browser speech synthesis if Chirp is unavailable. */
-function browserSpeak(text, opts = {}) {
-    return new Promise((resolve) => {
-        if (typeof window === "undefined" || !window.speechSynthesis) return resolve();
-        const utt = new SpeechSynthesisUtterance(text);
-        utt.rate = opts.rate || 0.95;
-        utt.pitch = 1;
-        const voices = window.speechSynthesis.getVoices();
-        const chosen = voices.find((v) => v.name.includes("Google US English") || v.name.includes("Samantha") || v.lang === "en-US");
-        if (chosen) utt.voice = chosen;
-        if (typeof opts.onStart === "function") utt.onstart = () => opts.onStart();
-        utt.onend = () => { if (typeof opts.onEnd === "function") opts.onEnd(); resolve(); };
-        utt.onerror = () => resolve();
-        window.speechSynthesis.speak(utt);
-    });
 }
 
 /* ============================================================================
@@ -189,9 +207,13 @@ const LIFE_COVERAGE_TOPICS = [
  * @param {Object} [persona] { description, style } — who is doing the interviewing
  * @returns {Promise<{ say: string }>}
  */
-async function startConversation(profile, persona = null) {
+async function startConversation(profile, persona = null, priorNotes = "") {
     const personaLine = persona && persona.description
         ? `\nYOU ARE PLAYING THIS CHARACTER (stay in character warmly, let it color your word choice and energy, but never overdo an accent in text): ${persona.description}. ${persona.style || ""}`
+        : "";
+
+    const notesLine = priorNotes && priorNotes.trim()
+        ? `\n\nWHAT WE ALREADY KNOW ABOUT THEM (from notes they shared — don't make them repeat it; build on it and reference it warmly):\n"""\n${priorNotes.trim().slice(0, 4000)}\n"""`
         : "";
 
     const payload = {
@@ -202,12 +224,12 @@ async function startConversation(profile, persona = null) {
                         text: `You are "Echo", a warm, gentle, emotionally intelligent companion who helps an elderly person tell the story of their life so it can become a beautiful keepsake picture book. You are talking out loud, like a kind grandchild or a caring biographer sitting beside them with tea.${personaLine}
 
 The person:
-${JSON.stringify(profile, null, 2)}
+${JSON.stringify(profile, null, 2)}${notesLine}
 
 Write your VERY FIRST spoken line. Rules:
 - Greet them warmly by first name.
-- Keep it short and easy — 1 to 2 sentences, then ONE simple, inviting opening question.
-- Make the question easy and pleasant to answer (e.g., about where they grew up, a happy early memory, or what kind of child they were). Not heavy.
+- If we already know things about them (above), warmly reference one detail so they feel known, then ask ONE simple question that goes a little deeper — don't ask what we already know.
+- Otherwise keep it short and easy — 1 to 2 sentences, then ONE simple, inviting opening question (where they grew up, a happy early memory, what kind of child they were). Not heavy.
 - Sound human and spoken, not formal. Use contractions. No emojis, no markdown, no stage directions.
 
 Return strict JSON: { "say": "your spoken opening line" }`
@@ -245,13 +267,17 @@ Return strict JSON: { "say": "your spoken opening line" }`
  * @param {Object} [params.persona]  { description, style } interviewer character
  * @returns {Promise<{ say:string, covered:string[], newly_covered:string[], suggested_answer:string, enough:boolean }>}
  */
-async function continueConversation({ profile, history, covered = [], turnCount = 0, minTurns = 8, persona = null }) {
+async function continueConversation({ profile, history, covered = [], turnCount = 0, minTurns = 8, persona = null, priorNotes = "" }) {
     const transcript = history
         .map((m) => `${m.role === "agent" ? "ECHO" : "THEM"}: ${m.text}`)
         .join("\n");
 
     const personaLine = persona && persona.description
         ? `\nYOU ARE PLAYING THIS CHARACTER (stay in character warmly — let it gently color your word choice and energy, but keep it natural and never caricature an accent in text): ${persona.description}. ${persona.style || ""}`
+        : "";
+
+    const notesLine = priorNotes && priorNotes.trim()
+        ? `\n\nBACKGROUND NOTES WE ALREADY HAVE ABOUT THEM (build on these; don't make them repeat what's here):\n"""\n${priorNotes.trim().slice(0, 4000)}\n"""`
         : "";
 
     const lastUser = [...history].reverse().find((m) => m.role === "user");
@@ -265,7 +291,7 @@ async function continueConversation({ profile, history, covered = [], turnCount 
                         text: `You are "Echo", a warm, curious, emotionally intelligent companion interviewing an elderly person to gently draw out their life story for a keepsake picture book. Think of yourself as part caring grandchild, part skilled psychologist: you make them feel safe, truly listened to, and delighted to keep talking — so much that they happily wander into stories and tangents.${personaLine}
 
 THE PERSON:
-${JSON.stringify(profile, null, 2)}
+${JSON.stringify(profile, null, 2)}${notesLine}
 
 CONVERSATION SO FAR:
 ${transcript || "(none yet)"}
@@ -329,6 +355,88 @@ Return strict JSON:
     const data = await geminiGenerateContent("adc", payload);
     const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
     if (!text) throw new Error("The conversation could not continue.");
+    const parsed = JSON.parse(text);
+    const newly = Array.isArray(parsed.newly_covered) ? parsed.newly_covered : [];
+    parsed.covered = Array.from(new Set([...(covered || []), ...newly]));
+    return parsed;
+}
+
+/**
+ * Steers the conversation onto a new subject — either one the person typed
+ * ("my marriage", "let's talk about my parents") or, if blank, a fresh topic
+ * Echo picks from the uncovered life areas. Echo gracefully pivots and asks a
+ * warm, inviting opening question about it.
+ *
+ * @param {Object} params
+ * @param {Object} params.profile
+ * @param {Array<{role:'agent'|'user', text:string}>} params.history
+ * @param {string[]} params.covered
+ * @param {string} [params.topic]  what the person wants to talk about ("" = surprise)
+ * @param {Object} [params.persona] { description, style }
+ * @returns {Promise<{ say:string, covered:string[], newly_covered:string[], suggested_answer:string }>}
+ */
+async function steerConversation({ profile, history, covered = [], topic = "", persona = null }) {
+    const transcript = history
+        .map((m) => `${m.role === "agent" ? "ECHO" : "THEM"}: ${m.text}`)
+        .join("\n");
+
+    const personaLine = persona && persona.description
+        ? `\nYOU ARE PLAYING THIS CHARACTER (warmly, gently colors your tone): ${persona.description}. ${persona.style || ""}`
+        : "";
+
+    const directive = topic && topic.trim()
+        ? `The person has asked to change the subject and talk about: "${topic.trim()}". Warmly and naturally pivot to THAT subject now, and ask one inviting opening question about it.`
+        : `The person wants a fresh subject. Pick a NEW life area they haven't really covered yet (look at the checklist and what's missing), or a delightful big-life question (marriage, children, proudest moment, a historic event they lived through, their biggest turning point). Warmly pivot and ask one inviting opening question about it.`;
+
+    const payload = {
+        contents: [
+            {
+                parts: [
+                    {
+                        text: `You are "Echo", a warm, emotionally intelligent companion gently drawing out an elderly person's life story for a keepsake book.${personaLine}
+
+THE PERSON:
+${JSON.stringify(profile, null, 2)}
+
+CONVERSATION SO FAR:
+${transcript || "(just getting started)"}
+
+LIFE AREAS CHECKLIST: ${JSON.stringify(LIFE_COVERAGE_TOPICS)}
+ALREADY COVERED: ${JSON.stringify(covered)}
+
+${directive}
+
+STYLE:
+- A brief, warm one-line transition (e.g. "Oh, I'd love to hear about that.") then ONE inviting question.
+- Spoken, natural, short. Contractions. No emojis, markdown, or stage directions.
+
+Return strict JSON:
+{
+  "say": "Echo's spoken pivot + one question",
+  "newly_covered": ["topic", ...],
+  "suggested_answer": "a short first-person example answer they could start from"
+}`
+                    }
+                ]
+            }
+        ],
+        generationConfig: {
+            responseMimeType: "application/json",
+            responseSchema: {
+                type: "OBJECT",
+                properties: {
+                    say: { type: "STRING" },
+                    newly_covered: { type: "ARRAY", items: { type: "STRING" } },
+                    suggested_answer: { type: "STRING" }
+                },
+                required: ["say", "newly_covered", "suggested_answer"]
+            }
+        }
+    };
+
+    const data = await geminiGenerateContent("adc", payload);
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!text) throw new Error("Could not switch topics.");
     const parsed = JSON.parse(text);
     const newly = Array.isArray(parsed.newly_covered) ? parsed.newly_covered : [];
     parsed.covered = Array.from(new Set([...(covered || []), ...newly]));
@@ -474,10 +582,13 @@ function blobToGenerativePart(blob) {
         const reader = new FileReader();
         reader.onloadend = () => {
             const base64Data = reader.result.split(',')[1];
+            // Strip any codecs suffix (e.g. "audio/webm;codecs=opus") — Gemini
+            // wants a clean container mime type like "audio/webm".
+            const cleanMime = (blob.type || "audio/webm").split(";")[0].trim() || "audio/webm";
             resolve({
                 inlineData: {
                     data: base64Data,
-                    mimeType: blob.type || "audio/webm"
+                    mimeType: cleanMime
                 }
             });
         };

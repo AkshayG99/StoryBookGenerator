@@ -40,6 +40,7 @@ document.addEventListener("DOMContentLoaded", () => {
         convBusy: false,       // a turn is in flight
         lastSuggested: "",     // last AI-suggested answer for "Help me answer"
         lastAgentText: "",     // last thing Echo said (for "Say that again")
+        finalTranscript: "",   // clean transcript for download
         autoSendTimer: null,
         autoSendInterval: null,
         // --- Interviewer / narrator persona + voice ---
@@ -49,6 +50,8 @@ document.addEventListener("DOMContentLoaded", () => {
         interviewerPersona: null,  // { description, style } for prompt flavor
         // --- Hands-free voice ---
         silenceTimer: null,
+        silenceRaf: null,      // requestAnimationFrame id for mic-level monitor
+        silenceAudio: null,    // { ctx, analyser, source } for silence detection
         handsFree: true
     };
 
@@ -60,8 +63,6 @@ document.addEventListener("DOMContentLoaded", () => {
     const settingsModal = document.getElementById("modal-settings");
     const closeSettingsBtn = document.getElementById("btn-close-settings");
     const saveSettingsBtn = document.getElementById("btn-save-settings");
-    const apiKeyInput = document.getElementById("gemini-key");
-    const toggleKeyVisibilityBtn = document.getElementById("btn-toggle-key-visibility");
     const loadingOverlay = document.getElementById("loading-overlay");
     const loadingOverlayTitle = document.getElementById("loading-overlay-title");
     const loadingOverlaySubtitle = document.getElementById("loading-overlay-subtitle");
@@ -97,6 +98,8 @@ document.addEventListener("DOMContentLoaded", () => {
     const tabButtons = document.querySelectorAll(".tab-btn");
     const tabContents = document.querySelectorAll(".tab-content");
     const pasteTranscriptArea = document.getElementById("input-transcript");
+    const loadTranscriptBtn = document.getElementById("btn-load-transcript");
+    const transcriptFileInput = document.getElementById("transcript-file");
     const fileUploader = document.getElementById("file-uploader");
     const dropZone = document.getElementById("drop-zone");
     const selectedFileInfo = document.getElementById("selected-file-info");
@@ -121,6 +124,12 @@ document.addEventListener("DOMContentLoaded", () => {
     const finishInterviewBtn = document.getElementById("btn-finish-interview");
     const suggestAnswerBtn = document.getElementById("btn-suggest-answer");
     const skipQuestionBtn = document.getElementById("btn-skip-question");
+    const newTopicBtn = document.getElementById("btn-new-topic");
+    const newTopicPopover = document.getElementById("new-topic-popover");
+    const newTopicInput = document.getElementById("new-topic-input");
+    const newTopicGoBtn = document.getElementById("btn-new-topic-go");
+    const newTopicSurpriseBtn = document.getElementById("btn-new-topic-surprise");
+    const newTopicCancelBtn = document.getElementById("btn-new-topic-cancel");
     const autoAdvanceBadge = document.getElementById("interview-autoadvance");
     const autoAdvanceNum = autoAdvanceBadge ? autoAdvanceBadge.querySelector(".autoadvance-num") : null;
 
@@ -150,15 +159,15 @@ document.addEventListener("DOMContentLoaded", () => {
     const bookProgressText = document.getElementById("book-progress-text");
     const readAloudBtn = document.getElementById("btn-read-aloud");
     const resetWizardBtn = document.getElementById("btn-reset-wizard");
-    const ambienceBtn = document.getElementById("btn-ambience-settings");
-    const ambiencePanel = document.getElementById("panel-ambience");
+    const exportDropdown = document.getElementById("export-dropdown");
+    const exportDropdownBtn = document.getElementById("btn-export-dropdown");
+    const exportTranscriptBtn = document.getElementById("export-transcript");
     
     // Audio / Ambience Elements
     const trackPiano = document.getElementById("track-piano");
     const audioPiano = document.getElementById("audio-piano");
     const volPiano = document.getElementById("vol-piano");
     const trackFireplace = document.getElementById("track-fireplace");
-    const audioFireplace = document.getElementById("audio-fireplace");
     const volFireplace = document.getElementById("vol-fireplace");
 
     // Exports
@@ -204,19 +213,13 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
 
-    // --- Gemini MediaRecorder fallback ---
+    // --- Gemini audio recorder (speech-to-text) ---
     async function startFallbackRecorder() {
         if (state.isFallbackRecording) {
             // Second tap = stop and transcribe
             if (state.fallbackRecorder && state.fallbackRecorder.state === "recording") {
                 state.fallbackRecorder.stop();
             }
-            return;
-        }
-
-        if (!getApiKey()) {
-            settingsModal.classList.remove("hidden");
-            showToast("Gemini API key required for fallback recording.", "error");
             return;
         }
 
@@ -246,7 +249,12 @@ document.addEventListener("DOMContentLoaded", () => {
             state.fallbackRecorder.onstop = async () => {
                 setRecordButtonsActive(false);
                 state.isFallbackRecording = false;
-                setMicStatus("Transcribing with Gemini...");
+                stopSilenceMonitor();
+                const inConversation = state.activeStep === 2;
+                if (inConversation) {
+                    setEchoState("Thinking…", "thinking");
+                }
+                setMicStatus("Transcribing…");
 
                 if (state.fallbackStream) {
                     state.fallbackStream.getTracks().forEach((t) => t.stop());
@@ -259,13 +267,17 @@ document.addEventListener("DOMContentLoaded", () => {
                     });
                     const transcript = await transcribeSpeechBlob({ audioBlob });
                     appendToActiveAnswer(transcript);
-                    showToast("Transcribed via Gemini.", "success");
-                    setMicStatus("Got it. Moving on shortly — tap the timer to stay and edit.");
-                    onAnswerCaptured();
+                    if (inConversation) {
+                        // Hands-free: send straight to Echo.
+                        submitAnswer();
+                    } else {
+                        setMicStatus("Got it.");
+                    }
                 } catch (err) {
-                    console.error("Gemini fallback transcription failed:", err);
+                    console.error("Gemini transcription failed:", err);
                     showToast("Transcription failed: " + err.message, "error");
-                    setMicStatus("Transcription failed. Type your answer or retry.");
+                    setMicStatus("Didn't catch that — tap the mic to try again.");
+                    if (inConversation) setEchoState("Your turn", null);
                 } finally {
                     state.fallbackRecorder = null;
                     state.fallbackChunks = [];
@@ -275,14 +287,179 @@ document.addEventListener("DOMContentLoaded", () => {
             state.fallbackRecorder.start();
             state.isFallbackRecording = true;
             setRecordButtonsActive(true);
-            setMicStatus("Recording... Tap mic again to stop & transcribe.");
+            if (state.activeStep === 2) {
+                setEchoState("Listening — your turn", "listening");
+                setMicStatus("Listening… just talk. (Pause when you're done, or tap the mic.)");
+                startSilenceMonitor(state.fallbackStream);
+            } else {
+                setMicStatus("Recording… tap the mic again to stop & transcribe.");
+            }
         } catch (err) {
-            console.error("Fallback recorder failed to start:", err);
+            console.error("Recorder failed to start:", err);
             showToast("Could not access microphone: " + err.message, "error");
             setMicStatus("Mic unavailable. Type your answer instead.");
             state.isFallbackRecording = false;
             setRecordButtonsActive(false);
         }
+    }
+
+    // --- Silence detection for hands-free conversation recording ---
+    // Watches the mic level and auto-stops the recorder after a pause, so the
+    // person can just talk and stop talking without tapping anything.
+    function startSilenceMonitor(stream) {
+        stopSilenceMonitor();
+        if (!stream || !(window.AudioContext || window.webkitAudioContext)) return;
+        try {
+            const AC = window.AudioContext || window.webkitAudioContext;
+            const ctx = new AC();
+            const source = ctx.createMediaStreamSource(stream);
+            const analyser = ctx.createAnalyser();
+            analyser.fftSize = 512;
+            source.connect(analyser);
+            const data = new Uint8Array(analyser.fftSize);
+
+            state.silenceAudio = { ctx, analyser, source };
+            let hasSpoken = false;
+            let silenceStart = 0;
+            const SILENCE_RMS = 0.012;   // below this counts as silence
+            const SILENCE_MS = 2200;     // stop after this much trailing silence
+            const startedAt = Date.now();
+
+            const tick = () => {
+                if (!state.isFallbackRecording || !state.silenceAudio) return;
+                analyser.getByteTimeDomainData(data);
+                let sum = 0;
+                for (let i = 0; i < data.length; i++) {
+                    const v = (data[i] - 128) / 128;
+                    sum += v * v;
+                }
+                const rms = Math.sqrt(sum / data.length);
+                const now = Date.now();
+
+                if (rms > SILENCE_RMS) {
+                    hasSpoken = true;
+                    silenceStart = 0;
+                } else if (hasSpoken) {
+                    if (!silenceStart) silenceStart = now;
+                    else if (now - silenceStart > SILENCE_MS) {
+                        // Trailing silence after speech → auto-stop & transcribe.
+                        if (state.fallbackRecorder && state.fallbackRecorder.state === "recording") {
+                            state.fallbackRecorder.stop();
+                        }
+                        return;
+                    }
+                } else if (now - startedAt > 9000) {
+                    // Never heard speech for 9s → give up listening quietly.
+                    if (state.fallbackRecorder && state.fallbackRecorder.state === "recording") {
+                        state.fallbackRecorder.stop();
+                    }
+                    return;
+                }
+                state.silenceRaf = requestAnimationFrame(tick);
+            };
+            state.silenceRaf = requestAnimationFrame(tick);
+        } catch (e) {
+            console.warn("Silence monitor unavailable:", e);
+        }
+    }
+
+    function stopSilenceMonitor() {
+        if (state.silenceRaf) { cancelAnimationFrame(state.silenceRaf); state.silenceRaf = null; }
+        if (state.silenceAudio) {
+            try { state.silenceAudio.source.disconnect(); } catch (_) {}
+            try { state.silenceAudio.ctx.close(); } catch (_) {}
+            state.silenceAudio = null;
+        }
+    }
+
+    // --- Procedural fireplace ambience (Web Audio, no external file) ---
+    // The hosted fireplace .wav was blocked by the browser, so we synthesize a
+    // warm crackle: low brown-noise rumble + random short "pop" transients.
+    let fireplace = null;
+
+    function startFireplace(volume) {
+        const AC = window.AudioContext || window.webkitAudioContext;
+        if (!AC) {
+            showToast("Your browser can't play the fireplace sound.", "error");
+            return false;
+        }
+        try {
+            stopFireplace();
+            const ctx = new AC();
+
+            // Master gain for the whole fireplace bed.
+            const master = ctx.createGain();
+            master.gain.value = Math.max(0, Math.min(1, isNaN(volume) ? 0.4 : volume));
+            master.connect(ctx.destination);
+
+            // 1) Continuous low rumble: brown noise through a lowpass filter.
+            const bufferSize = 2 * ctx.sampleRate;
+            const noiseBuf = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+            const out = noiseBuf.getChannelData(0);
+            let lastOut = 0;
+            for (let i = 0; i < bufferSize; i++) {
+                const white = Math.random() * 2 - 1;
+                lastOut = (lastOut + 0.02 * white) / 1.02;
+                out[i] = lastOut * 3.5;
+            }
+            const rumble = ctx.createBufferSource();
+            rumble.buffer = noiseBuf;
+            rumble.loop = true;
+            const rumbleFilter = ctx.createBiquadFilter();
+            rumbleFilter.type = "lowpass";
+            rumbleFilter.frequency.value = 420;
+            const rumbleGain = ctx.createGain();
+            rumbleGain.gain.value = 0.5;
+            rumble.connect(rumbleFilter).connect(rumbleGain).connect(master);
+            rumble.start();
+
+            // 2) Random crackle "pops": short bandpassed noise bursts.
+            let stopped = false;
+            const scheduleCrackle = () => {
+                if (stopped) return;
+                const pop = ctx.createBufferSource();
+                const len = Math.floor(ctx.sampleRate * (0.01 + Math.random() * 0.04));
+                const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+                const d = buf.getChannelData(0);
+                for (let i = 0; i < len; i++) {
+                    d[i] = (Math.random() * 2 - 1) * (1 - i / len); // quick decay
+                }
+                pop.buffer = buf;
+                const bp = ctx.createBiquadFilter();
+                bp.type = "bandpass";
+                bp.frequency.value = 900 + Math.random() * 2600;
+                bp.Q.value = 0.7;
+                const g = ctx.createGain();
+                g.gain.value = 0.18 + Math.random() * 0.5;
+                pop.connect(bp).connect(g).connect(master);
+                pop.start();
+                // Next crackle in 40–360ms for a lively but cozy fire.
+                fireplace.timer = setTimeout(scheduleCrackle, 40 + Math.random() * 320);
+            };
+
+            fireplace = { ctx, master, rumble, timer: null, stop: () => { stopped = true; } };
+            scheduleCrackle();
+            return true;
+        } catch (err) {
+            console.error("Fireplace synth failed:", err);
+            showToast("Could not start the fireplace sound.", "error");
+            return false;
+        }
+    }
+
+    function setFireplaceVolume(volume) {
+        if (fireplace && fireplace.master) {
+            fireplace.master.gain.value = Math.max(0, Math.min(1, isNaN(volume) ? 0.4 : volume));
+        }
+    }
+
+    function stopFireplace() {
+        if (!fireplace) return;
+        try { fireplace.stop && fireplace.stop(); } catch (_) {}
+        if (fireplace.timer) { clearTimeout(fireplace.timer); fireplace.timer = null; }
+        try { fireplace.rumble.stop(); } catch (_) {}
+        try { fireplace.ctx.close(); } catch (_) {}
+        fireplace = null;
     }
 
     if (SpeechRecognition) {
@@ -295,12 +472,13 @@ document.addEventListener("DOMContentLoaded", () => {
             state.isRecording = true;
             if (state.activeStep === 2) {
                 if (interviewRecordBtn) interviewRecordBtn.classList.add("recording");
-                if (interviewDictationStatus) interviewDictationStatus.textContent = "Listening... share your answer.";
+                if (interviewDictationStatus) interviewDictationStatus.textContent = "Listening… share your answer.";
+                if (typeof setEchoState === "function") setEchoState("Listening — your turn", "listening");
             } else {
                 recordBtn.classList.add("recording");
                 dictationStatus.textContent = "Listening closely... Speak now.";
+                showToast("Recording started. Speak clearly.", "info");
             }
-            showToast("Recording started. Speak clearly.", "info");
         };
 
         recognition.onerror = (event) => {
@@ -403,18 +581,9 @@ document.addEventListener("DOMContentLoaded", () => {
     };
 
     // --- Setup Initialization ---
-    async function hydrateApiKeyInput() {
-        await loadApiKeyFromEnv();
-        const savedKey = getApiKey();
-        if (savedKey) {
-            apiKeyInput.value = savedKey;
-        }
-    }
-
     function init() {
         setupEventListeners();
         showLandingPage();
-        hydrateApiKeyInput();
     }
 
     // --- Helper Functions ---
@@ -506,57 +675,16 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     // --- Dictation Control ---
+    // Speech-to-text is Gemini-only: always record audio and transcribe it
+    // server-side via the backend (no browser Web Speech API).
     function startDictation({ isRetry = false } = {}) {
-        // If Web Speech previously failed with network error, use Gemini fallback
-        if (state.useFallbackSpeech || !recognition) {
-            startFallbackRecorder();
-            return;
-        }
-
-        if (!isRetry) {
-            networkRetryUsed = false;
-        }
-
-        if (!navigator.onLine) {
-            showToast("You appear to be offline. Switching to Gemini recording fallback.", "error");
-            state.useFallbackSpeech = true;
-            startFallbackRecorder();
-            return;
-        }
-
-        try {
-            if (dictationPreview) dictationPreview.textContent = pasteTranscriptArea.value || "Speak now...";
-            recognition.start();
-        } catch (e) {
-            console.error(e);
-            showToast("Could not start microphone capture. Please try again.", "error");
-        }
+        startFallbackRecorder();
     }
 
     function stopDictation(shouldStopEngine = true) {
-        // Fallback mode: delegate to fallback recorder
-        if (state.useFallbackSpeech) {
-            if (state.fallbackRecorder && state.fallbackRecorder.state === "recording") {
-                state.fallbackRecorder.stop();
-            }
-            return;
-        }
-
-        if (!recognition) return;
-
-        if (dictationRetryTimer) {
-            clearTimeout(dictationRetryTimer);
-            dictationRetryTimer = null;
-        }
-
-        state.isRecording = false;
-        setRecordButtonsActive(false);
-        setMicStatus("Recording stopped. Click microphone to record again.");
-
-        if (shouldStopEngine) {
-            try {
-                recognition.stop();
-            } catch (e) {}
+        // Gemini-only STT: stop the audio recorder; its onstop transcribes.
+        if (state.fallbackRecorder && state.fallbackRecorder.state === "recording") {
+            state.fallbackRecorder.stop();
         }
     }
 
@@ -677,18 +805,35 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     // Echo says something out loud (Chirp voice) and shows it as a chat bubble.
+    // A sequence number guards against overlap: if a newer utterance, a manual
+    // mic tap, or leaving the step happens, the stale continuation does nothing.
+    let echoSpeakSeq = 0;
+
+    async function speakAgentLine(text, { arm = true } = {}) {
+        const mySeq = ++echoSpeakSeq;
+        setEchoState("Speaking…", "speaking");
+        try {
+            await speakWithChirp(text, { rate: 0.96, voice: state.interviewerVoice });
+        } catch (_) { /* ignore voice errors */ }
+        // Superseded (newer line, manual mic, or left the step): leave state alone.
+        if (mySeq !== echoSpeakSeq || state.activeStep !== 2) return;
+        if (arm) armMicForAnswer();
+        else setEchoState("Ready", null);
+    }
+
     async function echoSpeak(text, { arm = true } = {}) {
         state.lastAgentText = text;
         state.conversation.push({ role: "agent", text });
         persistConversation();
         addChatBubble("agent", text);
-        setEchoState("Speaking…", "speaking");
-        try {
-            await speakWithChirp(text, { rate: 0.96, voice: state.interviewerVoice });
-        } catch (_) { /* ignore voice errors */ }
-        if (state.activeStep !== 2) return;
-        if (arm) armMicForAnswer();
-        else setEchoState("Ready", null);
+        await speakAgentLine(text, { arm });
+    }
+
+    // Stops Echo's voice AND invalidates any pending speak continuation so it
+    // won't re-arm the mic after the user takes a different action.
+    function cancelEchoSpeech() {
+        echoSpeakSeq++;
+        stopChirp();
     }
 
     function armMicForAnswer() {
@@ -740,7 +885,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const typing = showTypingBubble();
         let opening;
         try {
-            opening = await startConversation(getProfilePayload(), state.interviewerPersona);
+            opening = await startConversation(getProfilePayload(), state.interviewerPersona, state.transcriptText);
         } catch (error) {
             if (typing) typing.remove();
             throw error;
@@ -770,7 +915,7 @@ document.addEventListener("DOMContentLoaded", () => {
             return;
         }
         clearInterviewTimers();
-        stopChirp();
+        cancelEchoSpeech();
         if (state.isRecording || state.isFallbackRecording) stopDictation(true);
 
         state.convBusy = true;
@@ -791,7 +936,8 @@ document.addEventListener("DOMContentLoaded", () => {
                 covered: state.coverage,
                 turnCount: state.convTurnCount,
                 minTurns: 8,
-                persona: state.interviewerPersona
+                persona: state.interviewerPersona,
+                priorNotes: state.transcriptText
             });
             if (typing) typing.remove();
 
@@ -820,6 +966,60 @@ document.addEventListener("DOMContentLoaded", () => {
         showToast("Echo has gathered a wonderful story. Create your book whenever you're ready.", "success");
     }
 
+    // Manually steer the conversation onto a new subject (typed or surprise).
+    async function steerToNewTopic(topic) {
+        if (state.convBusy) return;
+        hideNewTopicPopover();
+        clearInterviewTimers();
+        cancelEchoSpeech();
+        if (state.isRecording || state.isFallbackRecording) stopDictation(true);
+
+        state.convBusy = true;
+        // Record the steer as a quiet user intent so the transcript stays coherent.
+        const intentLabel = topic && topic.trim()
+            ? `(Let's talk about ${topic.trim()}.)`
+            : "(Let's talk about something new.)";
+        state.conversation.push({ role: "user", text: intentLabel });
+        addChatBubble("user", intentLabel);
+        persistConversation();
+
+        setEchoState("Thinking…", "thinking");
+        const typing = showTypingBubble();
+        try {
+            const result = await steerConversation({
+                profile: getProfilePayload(),
+                history: state.conversation,
+                covered: state.coverage,
+                topic: topic || "",
+                persona: state.interviewerPersona
+            });
+            if (typing) typing.remove();
+            state.coverage = result.covered || state.coverage;
+            state.lastSuggested = result.suggested_answer || "";
+            updateCoverageUI();
+            await echoSpeak(result.say);
+        } catch (error) {
+            if (typing) typing.remove();
+            console.error("Topic switch failed:", error);
+            showToast("Couldn't switch topics: " + error.message, "error");
+        } finally {
+            state.convBusy = false;
+        }
+    }
+
+    function showNewTopicPopover() {
+        if (!newTopicPopover) return;
+        newTopicPopover.classList.remove("hidden");
+        if (newTopicInput) {
+            newTopicInput.value = "";
+            setTimeout(() => newTopicInput.focus(), 50);
+        }
+    }
+
+    function hideNewTopicPopover() {
+        if (newTopicPopover) newTopicPopover.classList.add("hidden");
+    }
+
     function buildConversationTranscript() {
         const sections = [];
         sections.push(`Narrator profile: ${state.elderName}, age ${state.elderAge}, gender ${state.elderGender || "not specified"}, background ${state.elderEthnicity || "not specified"}.`);
@@ -833,6 +1033,24 @@ document.addEventListener("DOMContentLoaded", () => {
         });
         if (lines.length) sections.push(`Life-story conversation:\n${lines.join("\n")}`);
         return sections.join("\n\n");
+    }
+
+    // A clean, human-readable transcript for the person to keep / re-upload later.
+    function buildReadableTranscript() {
+        const name = state.elderName || "Narrator";
+        const header = [
+            `Life Story Conversation — ${name}`,
+            `Age: ${state.elderAge || "—"}   Background: ${state.elderEthnicity || "—"}`,
+            `Recorded: ${new Date().toLocaleString()}`,
+            "".padEnd(48, "—")
+        ];
+        if (state.transcriptText && state.transcriptText.trim() && state.conversation.length === 0) {
+            header.push("", state.transcriptText.trim());
+        }
+        const lines = state.conversation.map((m) =>
+            m.role === "agent" ? `Echo: ${m.text}` : `${name}: ${m.text}`
+        );
+        return header.join("\n") + "\n\n" + lines.join("\n\n") + "\n";
     }
 
     async function generateOutlineFromInterview() {
@@ -849,6 +1067,9 @@ document.addEventListener("DOMContentLoaded", () => {
         }
 
         state.transcriptText = combinedTranscript;
+        // Keep a clean human-readable copy for downloading, and persist it.
+        state.finalTranscript = buildReadableTranscript();
+        try { localStorage.setItem("echo_final_transcript", state.finalTranscript); } catch (_) {}
 
         generationLog.innerHTML = "";
         loadingOverlayTitle.textContent = "Weaving your story...";
@@ -1009,23 +1230,9 @@ document.addEventListener("DOMContentLoaded", () => {
             if (e.target === settingsModal) settingsModal.classList.add("hidden");
         });
 
-        // Toggle Key Visibility
-        toggleKeyVisibilityBtn.addEventListener("click", () => {
-            const isPassword = apiKeyInput.type === "password";
-            apiKeyInput.type = isPassword ? "text" : "password";
-            toggleKeyVisibilityBtn.innerHTML = isPassword ? `<i class="fa-solid fa-eye-slash"></i>` : `<i class="fa-solid fa-eye"></i>`;
-        });
-
-        // Save API Key
+        // Settings "Done" simply closes the panel (auth is via ADC; no key needed).
         saveSettingsBtn.addEventListener("click", () => {
-            const key = apiKeyInput.value.trim();
-            if (!key) {
-                showToast("API Key cannot be blank.", "error");
-                return;
-            }
-            saveApiKey(key);
             settingsModal.classList.add("hidden");
-            showToast("API Key saved securely.", "success");
         });
 
         // Source Tab Switching
@@ -1048,6 +1255,25 @@ document.addEventListener("DOMContentLoaded", () => {
         // File Uploader
         dropZone.addEventListener("click", () => fileUploader.click());
         fileUploader.addEventListener("change", (e) => handleFiles(e.target.files));
+
+        // Load a saved .txt transcript into the paste box.
+        if (loadTranscriptBtn && transcriptFileInput) {
+            loadTranscriptBtn.addEventListener("click", () => transcriptFileInput.click());
+            transcriptFileInput.addEventListener("change", (e) => {
+                const file = e.target.files && e.target.files[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = () => {
+                    const existing = pasteTranscriptArea.value.trim();
+                    pasteTranscriptArea.value = (existing ? existing + "\n\n" : "") + String(reader.result || "");
+                    state.transcriptText = pasteTranscriptArea.value;
+                    showToast("Transcript loaded — Echo will know it and build on it.", "success");
+                };
+                reader.onerror = () => showToast("Could not read that file.", "error");
+                reader.readAsText(file);
+                transcriptFileInput.value = "";
+            });
+        }
         
         dropZone.addEventListener("dragover", (e) => {
             e.preventDefault();
@@ -1155,16 +1381,14 @@ document.addEventListener("DOMContentLoaded", () => {
             });
         }
 
-        // "Say that again" — re-speak Echo's last line.
+        // "Say that again" — re-speak Echo's last line (guarded against overlap).
         if (replayInterviewQuestionBtn) {
             replayInterviewQuestionBtn.addEventListener("click", () => {
                 if (!state.lastAgentText) return;
                 clearInterviewTimers();
+                if (state.isRecording || state.isFallbackRecording) stopDictation(true);
                 stopChirp();
-                setEchoState("Speaking…", "speaking");
-                speakWithChirp(state.lastAgentText, { rate: 0.96 }).then(() => {
-                    if (state.activeStep === 2) armMicForAnswer();
-                });
+                speakAgentLine(state.lastAgentText, { arm: true });
             });
         }
 
@@ -1176,13 +1400,16 @@ document.addEventListener("DOMContentLoaded", () => {
                 const wasWebSpeechRecording = state.isRecording && !state.useFallbackSpeech;
 
                 if (state.isRecording || state.isFallbackRecording) {
+                    // Stop & (for live web speech) capture what was said.
                     stopDictation();
-                    // Web Speech transcribes live, so an answer is ready now.
                     if (wasWebSpeechRecording) {
                         setTimeout(() => onAnswerCaptured(), 400);
+                    } else {
+                        setEchoState("Your turn", null);
                     }
                 } else {
-                    stopChirp();
+                    // Start fresh: silence Echo and invalidate its pending re-arm.
+                    cancelEchoSpeech();
                     startDictation();
                 }
             });
@@ -1224,6 +1451,32 @@ document.addEventListener("DOMContentLoaded", () => {
             interviewAnswerInput.addEventListener("input", () => {
                 if (autoMicTimer) { clearTimeout(autoMicTimer); autoMicTimer = null; }
             });
+        }
+
+        // New topic: open chooser; type a subject or get a surprise prompt.
+        if (newTopicBtn) {
+            newTopicBtn.addEventListener("click", () => {
+                clearInterviewTimers();
+                if (newTopicPopover && newTopicPopover.classList.contains("hidden")) {
+                    showNewTopicPopover();
+                } else {
+                    hideNewTopicPopover();
+                }
+            });
+        }
+        if (newTopicGoBtn) {
+            newTopicGoBtn.addEventListener("click", () => steerToNewTopic(newTopicInput ? newTopicInput.value : ""));
+        }
+        if (newTopicInput) {
+            newTopicInput.addEventListener("keydown", (e) => {
+                if (e.key === "Enter") { e.preventDefault(); steerToNewTopic(newTopicInput.value); }
+            });
+        }
+        if (newTopicSurpriseBtn) {
+            newTopicSurpriseBtn.addEventListener("click", () => steerToNewTopic(""));
+        }
+        if (newTopicCancelBtn) {
+            newTopicCancelBtn.addEventListener("click", () => hideNewTopicPopover());
         }
 
         if (finishInterviewBtn) {
@@ -1339,25 +1592,15 @@ document.addEventListener("DOMContentLoaded", () => {
 
         // --- Step 3 Navigation ---
         prevPageBtn.addEventListener("click", () => {
-            if (state.currentPageIndex > 0) {
-                stopSpeech();
-                state.currentPageIndex--;
-                renderPageSpread();
-            }
+            turnPage(state.currentPageIndex - 1);
         });
 
         nextPageBtn.addEventListener("click", () => {
-            if (state.currentPageIndex < state.generatedBook.pages.length - 1) {
-                stopSpeech();
-                state.currentPageIndex++;
-                renderPageSpread();
-            }
+            turnPage(state.currentPageIndex + 1);
         });
 
         bookProgressRange.addEventListener("input", (e) => {
-            stopSpeech();
-            state.currentPageIndex = parseInt(e.target.value);
-            renderPageSpread();
+            turnPage(parseInt(e.target.value));
         });
 
         readAloudBtn.addEventListener("click", () => {
@@ -1373,18 +1616,7 @@ document.addEventListener("DOMContentLoaded", () => {
             }
         });
 
-        // Ambience controls
-        ambienceBtn.addEventListener("click", (e) => {
-            e.stopPropagation();
-            ambiencePanel.classList.toggle("hidden");
-        });
-
-        document.addEventListener("click", (e) => {
-            if (!ambiencePanel.classList.contains("hidden") && !ambiencePanel.contains(e.target) && e.target !== ambienceBtn) {
-                ambiencePanel.classList.add("hidden");
-            }
-        });
-
+        // Ambience controls (now live in the Settings modal)
         trackPiano.addEventListener("change", () => {
             if (trackPiano.checked) {
                 audioPiano.volume = volPiano.value;
@@ -1403,38 +1635,61 @@ document.addEventListener("DOMContentLoaded", () => {
 
         trackFireplace.addEventListener("change", () => {
             if (trackFireplace.checked) {
-                audioFireplace.volume = volFireplace.value;
-                audioFireplace.play().catch(err => {
-                    console.error("Audio playback error:", err);
+                if (!startFireplace(parseFloat(volFireplace.value))) {
                     trackFireplace.checked = false;
-                });
+                }
             } else {
-                audioFireplace.pause();
+                stopFireplace();
             }
         });
 
         volFireplace.addEventListener("input", () => {
-            audioFireplace.volume = volFireplace.value;
+            setFireplaceVolume(parseFloat(volFireplace.value));
         });
 
         regenerateImgBtn.addEventListener("click", () => {
             regenerateImageCurrentPage();
         });
 
+        // Export dropdown: click to toggle (not hover), so the menu stays put
+        // and isn't covered by the book UI.
+        if (exportDropdownBtn) {
+            exportDropdownBtn.addEventListener("click", (e) => {
+                e.stopPropagation();
+                exportDropdown.classList.toggle("open");
+            });
+            document.addEventListener("click", (e) => {
+                if (exportDropdown.classList.contains("open") && !exportDropdown.contains(e.target)) {
+                    exportDropdown.classList.remove("open");
+                }
+            });
+        }
+
         // Exports
         exportPdfBtn.addEventListener("click", (e) => {
             e.preventDefault();
+            exportDropdown.classList.remove("open");
             stopSpeech();
             exportBookAsPdf();
         });
 
         exportHtmlBtn.addEventListener("click", (e) => {
             e.preventDefault();
+            exportDropdown.classList.remove("open");
             downloadStandaloneHtml();
         });
 
+        if (exportTranscriptBtn) {
+            exportTranscriptBtn.addEventListener("click", (e) => {
+                e.preventDefault();
+                exportDropdown.classList.remove("open");
+                downloadTranscript();
+            });
+        }
+
         exportJsonBtn.addEventListener("click", (e) => {
             e.preventDefault();
+            exportDropdown.classList.remove("open");
             downloadMemoirJson();
         });
     }
@@ -1473,9 +1728,89 @@ document.addEventListener("DOMContentLoaded", () => {
         if (state.artStyle && state.artStyle.includes("pencil")) styleShort = "Pencil Sketch";
         if (state.artStyle && state.artStyle.includes("photo")) styleShort = "Vintage Photo";
         if (state.artStyle && state.artStyle.includes("digital")) styleShort = "Digital Painting";
+        if (state.artStyle && state.artStyle.includes("cartoon")) styleShort = "Cartoon";
         illustrationStyleLabel.textContent = styleShort;
 
         renderPageSpread();
+    }
+
+    // --- Animated page-turn (3D book flip) ---
+    let isFlipping = false;
+    const prefersReducedMotion = window.matchMedia
+        ? window.matchMedia("(prefers-reduced-motion: reduce)").matches
+        : false;
+
+    // Turns the book to targetIdx with a realistic page-flip, then renders it.
+    // Faces are exact clones of the real page DOM so nothing shifts during the turn.
+    function turnPage(targetIdx) {
+        if (!state.generatedBook) return;
+        const total = state.generatedBook.pages.length;
+        if (isFlipping || targetIdx < 0 || targetIdx >= total || targetIdx === state.currentPageIndex) return;
+
+        stopSpeech();
+        const flip = document.getElementById("page-flip");
+        const leftPageEl = document.getElementById("book-page-left");
+        const rightPageEl = document.getElementById("book-page-right");
+
+        // Reduced motion, missing elements, or stacked mobile layout: swap instantly.
+        const isStacked = window.innerWidth <= 768;
+        if (prefersReducedMotion || isStacked || !flip || !leftPageEl || !rightPageEl) {
+            state.currentPageIndex = targetIdx;
+            renderPageSpread();
+            return;
+        }
+
+        const direction = targetIdx > state.currentPageIndex ? "next" : "prev";
+        const front = flip.querySelector(".flip-front");
+        const back = flip.querySelector(".flip-back");
+
+        // 1) Snapshot the CURRENT spread for the front of the turning leaf.
+        const curLeftHtml = leftPageEl.innerHTML;
+        const curRightHtml = rightPageEl.innerHTML;
+
+        // 2) Render the destination spread underneath (this updates the real pages).
+        isFlipping = true;
+        state.currentPageIndex = targetIdx;
+        renderPageSpread();
+
+        // 3) Snapshot the TARGET spread for the back of the leaf.
+        const tgtLeftHtml = leftPageEl.innerHTML;
+        const tgtRightHtml = rightPageEl.innerHTML;
+
+        if (direction === "next") {
+            // The right (text) page lifts and turns left; its back reveals the
+            // destination's left (illustration) page.
+            flip.className = "page-flip flipping from-right";
+            front.innerHTML = curRightHtml;
+            back.innerHTML = tgtLeftHtml;
+        } else {
+            // The left (illustration) page lifts and turns right; its back reveals
+            // the destination's right (text) page.
+            flip.className = "page-flip flipping from-left";
+            front.innerHTML = curLeftHtml;
+            back.innerHTML = tgtRightHtml;
+        }
+
+        // Prime at 0deg, then animate on the next frame.
+        flip.style.transition = "none";
+        flip.style.transform = "rotateY(0deg)";
+        void flip.offsetWidth; // force reflow
+        requestAnimationFrame(() => {
+            flip.style.transition = "transform 0.7s cubic-bezier(0.30, 0, 0.20, 1)";
+            flip.style.transform = direction === "next" ? "rotateY(-180deg)" : "rotateY(180deg)";
+        });
+
+        const finish = () => {
+            flip.removeEventListener("transitionend", finish);
+            flip.className = "page-flip";
+            flip.style.transition = "none";
+            flip.style.transform = "rotateY(0deg)";
+            front.innerHTML = "";
+            back.innerHTML = "";
+            isFlipping = false;
+        };
+        flip.addEventListener("transitionend", finish);
+        setTimeout(() => { if (isFlipping) finish(); }, 1000); // safety net
     }
 
     function renderPageSpread() {
@@ -1484,11 +1819,13 @@ document.addEventListener("DOMContentLoaded", () => {
         const total = state.generatedBook.pages.length;
 
         const bookElement = document.getElementById("book-element");
-        bookElement.style.transform = "rotateY(-2deg) scale(0.99)";
-        
-        setTimeout(() => {
-            bookElement.style.transform = "rotateY(0deg) scale(1)";
-        }, 300);
+        // Small settle wobble — skipped during a page-flip so they don't fight.
+        if (!isFlipping) {
+            bookElement.style.transform = "rotateY(-2deg) scale(0.99)";
+            setTimeout(() => {
+                bookElement.style.transform = "rotateY(0deg) scale(1)";
+            }, 300);
+        }
 
         pageNumLeft.textContent = (idx * 2) + 1;
         pageNumRight.textContent = (idx * 2) + 2;
@@ -1817,145 +2154,167 @@ document.addEventListener("DOMContentLoaded", () => {
         showToast("Memoir JSON saved.", "success");
     }
 
+    function downloadTranscript() {
+        const text = state.finalTranscript || buildReadableTranscript();
+        if (!text || !text.trim()) {
+            showToast("No conversation transcript to download yet.", "error");
+            return;
+        }
+        const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        const base = (state.elderName || "life-story").toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
+        a.download = `${base || "life_story"}_transcript.txt`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        showToast("Transcript downloaded.", "success");
+    }
+
     function downloadStandaloneHtml() {
         const book = state.generatedBook;
-        let chaptersHtml = "";
-        
-        book.pages.forEach((p, idx) => {
-            chaptersHtml += `
-                <div class="chapter-spread">
-                    <div class="page-img">
-                        <img src="${p.isSampleAsset ? p.imageSrc : p.imageSrc}" alt="${p.chapterTitle}">
-                    </div>
-                    <div class="page-text">
-                        <h2>${p.chapterTitle}</h2>
-                        <p>${p.narrative.replace(/\n\n/g, '</p><p>')}</p>
-                        <span class="pagenum">Pages ${(idx * 2) + 1}-${(idx * 2) + 2}</span>
-                    </div>
-                </div>
-            `;
-        });
 
-        // We embed images as absolute paths or standard online URLs. 
-        // For sample assets, if downloaded locally, they will check local assets/ path.
-        // To make standalone HTML completely portable, let's use the absolute path relative to local app or fallback to pollinations.
-        // Wait, for sample assets, we can fall back to a public URL or base64, but since it's locally hosted, assets/story_* will work!
+        // Embed the book data (image data URLs are already self-contained).
+        const pagesData = book.pages.map((p) => ({
+            chapterTitle: p.chapterTitle || "",
+            narrative: p.narrative || "",
+            imageSrc: p.imageSrc || ""
+        }));
+        const dataJson = JSON.stringify({
+            title: book.title || "My Story",
+            subtitle: book.subtitle || "",
+            pages: pagesData
+        }).replace(/</g, "\\u003c");
+
         const template = `<!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>${escapeHtml(book.title)}</title>
-    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@700&family=EB+Garamond:ital,wght@0,400;0,600;1,400&family=Playfair+Display:wght@700&display=swap" rel="stylesheet">
-    <style>
-        body {
-            background: #fcfaf5;
-            color: #2b201a;
-            font-family: 'EB Garamond', Georgia, serif;
-            margin: 0;
-            padding: 3rem 1.5rem;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-        }
-        header {
-            text-align: center;
-            max-width: 800px;
-            margin-bottom: 4rem;
-            border-bottom: 1px solid #ebdcb9;
-            padding-bottom: 2rem;
-            width: 100%;
-        }
-        header h1 {
-            font-family: 'Cinzel', serif;
-            font-size: 2.4rem;
-            margin: 0 0 0.5rem 0;
-            color: #54392c;
-        }
-        header p {
-            font-size: 1.15rem;
-            font-style: italic;
-            color: #8c7a6c;
-            margin: 0;
-        }
-        .container {
-            max-width: 900px;
-            width: 100%;
-            display: flex;
-            flex-direction: column;
-            gap: 4rem;
-        }
-        .chapter-spread {
-            display: grid;
-            grid-template-columns: 1fr 1.2fr;
-            gap: 3rem;
-            align-items: center;
-            background: #fffdf9;
-            border: 1px solid #e2cca0;
-            border-radius: 12px;
-            padding: 2.5rem;
-            box-shadow: 0 10px 30px rgba(84, 57, 44, 0.05);
-        }
-        @media (max-width: 768px) {
-            .chapter-spread {
-                grid-template-columns: 1fr;
-                gap: 2rem;
-                padding: 1.5rem;
-            }
-        }
-        .page-img img {
-            width: 100%;
-            border-radius: 6px;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.06);
-            display: block;
-        }
-        .page-text {
-            display: flex;
-            flex-direction: column;
-            position: relative;
-            padding-bottom: 2rem;
-        }
-        .page-text h2 {
-            font-family: 'Playfair Display', serif;
-            font-size: 1.7rem;
-            margin: 0 0 1.2rem 0;
-            color: #3b2319;
-            border-bottom: 1px solid rgba(201, 160, 84, 0.25);
-            padding-bottom: 0.5rem;
-        }
-        .page-text p {
-            font-size: 1.25rem;
-            line-height: 1.6;
-            margin: 0 0 1rem 0;
-        }
-        .page-text p::first-letter {
-            font-family: 'Playfair Display', serif;
-            font-size: 2.8rem;
-            font-weight: bold;
-            float: left;
-            margin-top: 0.1rem;
-            margin-right: 0.5rem;
-            line-height: 0.85;
-            color: #c9a054;
-        }
-        .pagenum {
-            position: absolute;
-            bottom: 0;
-            right: 0;
-            font-family: 'Cinzel', serif;
-            font-size: 0.8rem;
-            color: #8d7b6e;
-        }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>${escapeHtml(book.title)}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=EB+Garamond:ital,wght@0,400;0,600;1,400&family=Playfair+Display:wght@500;700&display=swap" rel="stylesheet">
+<style>
+  :root { --paper:linear-gradient(135deg,#fffefc 0%,#f6edd7 100%); --ink:#2b201a; --gold:#ab7f34; --edge:#4a362b; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { background:radial-gradient(circle at 50% 30%,#fbf7ee,#efe6d3); color:var(--ink);
+    font-family:'EB Garamond',Georgia,serif; min-height:100vh; display:flex; flex-direction:column;
+    align-items:center; padding:2rem 1rem 3rem; }
+  header { text-align:center; margin-bottom:1.5rem; }
+  header h1 { font-family:'Cinzel',serif; font-size:2rem; color:#54392c; }
+  header p { font-style:italic; color:#8c7a6c; margin-top:.3rem; }
+  .viewport { perspective:1800px; width:100%; max-width:1040px; }
+  .book { position:relative; width:100%; aspect-ratio:16/10; display:flex;
+    transform-style:preserve-3d; border-radius:6px; border:6px solid var(--edge);
+    box-shadow:0 30px 70px rgba(0,0,0,.22); background:var(--paper); }
+  .spine { position:absolute; left:50%; top:0; bottom:0; width:3.2%; transform:translateX(-50%);
+    background:linear-gradient(to right,rgba(0,0,0,.06),rgba(0,0,0,.14) 20%,rgba(0,0,0,0) 50%,rgba(0,0,0,.14) 80%,rgba(0,0,0,.06));
+    border-left:1px solid #d8c29b; border-right:1px solid #d8c29b; z-index:10; pointer-events:none; }
+  .page { width:50%; height:100%; padding:2.6rem; display:flex; flex-direction:column;
+    background:var(--paper); overflow:hidden; position:relative; }
+  .page.left { box-shadow:inset -12px 0 20px rgba(0,0,0,.03); border-radius:4px 0 0 4px; }
+  .page.right { box-shadow:inset 12px 0 20px rgba(0,0,0,.03); border-radius:0 4px 4px 0; }
+  .illus { flex:1; border:1px solid #e0d0b0; border-radius:4px; overflow:hidden;
+    background:#0000000a; display:flex; align-items:center; justify-content:center; }
+  .illus img { width:100%; height:100%; object-fit:cover; display:block; }
+  .narr { flex:1; min-height:0; display:flex; flex-direction:column; }
+  .narr h2 { font-family:'Playfair Display',serif; font-size:1.5rem; color:#3b2319;
+    border-bottom:1px solid rgba(201,160,84,.3); padding-bottom:.5rem; margin-bottom:1rem; flex:none; }
+  .narr .body { flex:1; min-height:0; font-size:1.18rem; line-height:1.6;
+    overflow-y:auto; padding-right:.6rem; padding-bottom:1.6rem; }
+  .narr .body::-webkit-scrollbar { width:8px; }
+  .narr .body::-webkit-scrollbar-thumb { background:rgba(120,90,50,.3); border-radius:4px; }
+  .narr .body p { margin-bottom:.8rem; }
+  .pnum { position:absolute; bottom:1rem; font-family:'Cinzel',serif; font-size:.72rem; color:#8d7b6e; opacity:.6; }
+  .page.left .pnum { left:2rem; } .page.right .pnum { right:2rem; }
+  /* Turning leaf */
+  .leaf { position:absolute; top:0; height:100%; width:50%; z-index:30; transform-style:preserve-3d;
+    pointer-events:none; display:none; }
+  .leaf.on { display:block; }
+  .leaf.from-right { left:50%; transform-origin:left center; }
+  .leaf.from-left { left:0; transform-origin:right center; }
+  .face { position:absolute; inset:0; backface-visibility:hidden; -webkit-backface-visibility:hidden;
+    background:var(--paper); padding:2.6rem; overflow:hidden; display:flex; flex-direction:column; }
+  .face.back { transform:rotateY(180deg); }
+  nav { display:flex; align-items:center; gap:1rem; margin-top:1.5rem; flex-wrap:wrap; justify-content:center; }
+  button { font-family:'EB Garamond',serif; font-size:1rem; padding:.6rem 1.2rem; border-radius:30px;
+    border:1px solid #d8c29b; background:#fffdf9; color:#54392c; cursor:pointer; transition:.2s; }
+  button:hover:not(:disabled) { background:#f3e8cf; }
+  button:disabled { opacity:.4; cursor:default; }
+  #ind { font-size:.9rem; color:#8d7b6e; min-width:120px; text-align:center; }
+  input[type=range] { accent-color:var(--gold); width:200px; }
+  @media (max-width:760px){
+    .book{ flex-direction:column; aspect-ratio:auto; }
+    .page{ width:100%; height:auto; } .spine,.leaf{ display:none !important; }
+    .page.left{ border-bottom:1px solid #e0d0b0; }
+    .illus{ max-height:300px; }
+    .narr .body{ overflow:visible; padding-bottom:.5rem; }
+  }
+</style>
 </head>
 <body>
-    <header>
-        <h1>${escapeHtml(book.title)}</h1>
-        <p>${escapeHtml(book.subtitle)}</p>
-    </header>
-    <div class="container">
-        ${chaptersHtml}
-    </div>
+<header><h1>${escapeHtml(book.title)}</h1><p>${escapeHtml(book.subtitle)}</p></header>
+<div class="viewport">
+  <div class="book" id="book">
+    <div class="spine"></div>
+    <div class="leaf" id="leaf"><div class="face front" id="ff"></div><div class="face back" id="fb"></div></div>
+    <div class="page left" id="pl"></div>
+    <div class="page right" id="pr"></div>
+  </div>
+</div>
+<nav>
+  <button id="prev">&#8592; Previous</button>
+  <input type="range" id="slider" min="0" value="0">
+  <span id="ind"></span>
+  <button id="next">Next &#8594;</button>
+</nav>
+<script>
+const DATA = ${dataJson};
+const pages = DATA.pages;
+let idx = 0, flipping = false;
+const pl=document.getElementById('pl'), pr=document.getElementById('pr');
+const leaf=document.getElementById('leaf'), ff=document.getElementById('ff'), fb=document.getElementById('fb');
+const prev=document.getElementById('prev'), next=document.getElementById('next');
+const slider=document.getElementById('slider'), ind=document.getElementById('ind');
+slider.max = pages.length-1;
+function esc(s){return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function illusHTML(p){ return '<div class="illus">'+(p.imageSrc?'<img src="'+p.imageSrc+'" alt="">':'')+'</div>'; }
+function narrHTML(p){ var body=esc(p.narrative).split(/\\n\\n+/).map(function(t){return '<p>'+t+'</p>';}).join('');
+  return '<div class="narr"><h2>'+esc(p.chapterTitle)+'</h2><div class="body">'+body+'</div></div>'; }
+function render(){
+  var p=pages[idx];
+  pl.innerHTML = illusHTML(p) + '<div class="pnum">'+(idx*2+1)+'</div>';
+  pr.innerHTML = narrHTML(p) + '<div class="pnum">'+(idx*2+2)+'</div>';
+  prev.disabled = idx===0; next.disabled = idx===pages.length-1;
+  slider.value = idx; ind.textContent = 'Pages '+(idx*2+1)+'\\u2013'+(idx*2+2)+' of '+(pages.length*2);
+}
+function turn(target){
+  if(flipping || target<0 || target>=pages.length || target===idx) return;
+  if(window.innerWidth<=760){ idx=target; render(); return; }
+  var dir = target>idx ? 'next':'prev';
+  var curL=pl.innerHTML, curR=pr.innerHTML;
+  flipping=true; idx=target; render();
+  if(dir==='next'){ leaf.className='leaf on from-right'; ff.innerHTML=curR; fb.innerHTML=pl.innerHTML; }
+  else { leaf.className='leaf on from-left'; ff.innerHTML=curL; fb.innerHTML=pr.innerHTML; }
+  leaf.style.transition='none'; leaf.style.transform='rotateY(0deg)';
+  void leaf.offsetWidth;
+  requestAnimationFrame(function(){
+    leaf.style.transition='transform .7s cubic-bezier(.3,0,.2,1)';
+    leaf.style.transform = dir==='next' ? 'rotateY(-180deg)' : 'rotateY(180deg)';
+  });
+  var done=function(){ leaf.removeEventListener('transitionend',done); leaf.className='leaf';
+    leaf.style.transition='none'; leaf.style.transform='rotateY(0deg)'; ff.innerHTML=''; fb.innerHTML=''; flipping=false; };
+  leaf.addEventListener('transitionend',done);
+  setTimeout(function(){ if(flipping) done(); },1000);
+}
+prev.onclick=function(){ turn(idx-1); };
+next.onclick=function(){ turn(idx+1); };
+slider.oninput=function(e){ turn(parseInt(e.target.value,10)); };
+document.addEventListener('keydown',function(e){ if(e.key==='ArrowRight') turn(idx+1); if(e.key==='ArrowLeft') turn(idx-1); });
+render();
+</script>
 </body>
 </html>`;
 
@@ -1963,14 +2322,13 @@ document.addEventListener("DOMContentLoaded", () => {
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = url;
-        
-        const cleanTitle = state.generatedBook.title.toLowerCase().replace(/[^a-z0-9]/g, "_");
-        a.download = `${cleanTitle}_memoir_book.html`;
+        const cleanTitle = (book.title || "memoir").toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
+        a.download = `${cleanTitle || "memoir"}_flipbook.html`;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
-        showToast("Standalone HTML Book exported successfully.", "success");
+        showToast("Interactive flipbook exported — open it in any browser.", "success");
     }
 
     function escapeHtml(text) {

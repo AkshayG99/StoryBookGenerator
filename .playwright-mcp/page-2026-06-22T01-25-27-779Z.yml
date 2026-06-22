@@ -1,0 +1,121 @@
+- generic [active] [ref=e1]:
+  - banner [ref=e2]:
+    - generic [ref=e3]:
+      - generic [ref=e4]:
+        - generic [ref=e5]: 
+        - heading "Echoes of a Lifetime" [level=1] [ref=e6]
+      - generic [ref=e7]:
+        - button "Toggle Theme" [ref=e8] [cursor=pointer]:
+          - generic [ref=e9]: 
+        - button "Activation Settings" [ref=e10] [cursor=pointer]:
+          - generic [ref=e11]: 
+  - main [ref=e12]:
+    - generic:
+      - generic:
+        - generic:
+          - heading " Settings" [level=2]:
+            - generic: 
+            - text: Settings
+          - button "×"
+        - generic:
+          - heading " Background Ambience" [level=4]:
+            - generic: 
+            - text: Background Ambience
+          - paragraph: Soft sounds to play while you read your finished book.
+          - generic:
+            - generic: Gentle Piano Music
+            - generic:
+              - checkbox "Gentle Piano Music"
+              - slider "Piano volume": "0.3"
+          - generic:
+            - generic: Fireplace Crackle
+            - generic:
+              - checkbox "Fireplace Crackle"
+              - slider "Fireplace volume": "0.4"
+        - generic:
+          - button "Done"
+    - generic [ref=e13]:
+      - generic [ref=e14]:
+        - generic [ref=e15]:
+          - generic [ref=e16]:
+            - generic [ref=e17]: 
+            - text: Preserve Family Heritage
+          - heading "Turn Spoken Memories Into Illustrated Keepsakes" [level=2] [ref=e18]
+          - button " Begin a New Memoir" [ref=e20] [cursor=pointer]:
+            - generic [ref=e21]: 
+            - text: Begin a New Memoir
+        - generic [ref=e23]:
+          - generic [ref=e26]:
+            - generic [ref=e27]:
+              - img "Chapter 1 Illustration" [ref=e29]
+              - generic [ref=e30]: "1"
+            - generic [ref=e31]:
+              - generic [ref=e32]:
+                - 'heading "Chapter 1: The Whispers of Youth" [level=3] [ref=e33]'
+                - paragraph [ref=e35]: Back in 1948, the world felt much bigger and slower. In the backyard of our small farmhouse stood a giant old oak tree. I would spend hours underneath its branches, building little wooden boats out of twigs and leaves, launching them into imaginary streams. It was my private kingdom, where the leaves whispered stories of the places I would one day see and the adventures that lay ahead.
+              - generic [ref=e36]: "2"
+          - generic [ref=e37]:
+            - generic [ref=e38]:
+              - generic [ref=e39]: 
+              - text: The Whispering Oak (Sample)
+            - generic [ref=e40]:
+              - button "Previous Page" [disabled] [ref=e41]:
+                - generic [ref=e42]: 
+              - generic [ref=e43]:
+                - slider [ref=e44]: "0"
+                - generic [ref=e45]: Pages 1-2 of 6
+              - button "Next Page" [ref=e46] [cursor=pointer]:
+                - generic [ref=e47]: 
+      - generic [ref=e48]:
+        - heading "Artisanal Illustration Presets" [level=3] [ref=e49]
+        - generic [ref=e50]:
+          - generic [ref=e51]:
+            - generic [ref=e52]:
+              - img "Soft Watercolor Illustration Preset" [ref=e53]
+              - generic [ref=e54]: Watercolor
+            - heading "Soft Watercolor" [level=4] [ref=e55]
+          - generic [ref=e56]:
+            - generic [ref=e57]:
+              - img "Classic Oil Painting Illustration Preset" [ref=e58]
+              - generic [ref=e59]: Oil Painting
+            - heading "Classic Oil Painting" [level=4] [ref=e60]
+          - generic [ref=e61]:
+            - generic [ref=e62]:
+              - img "Pencil Sketch Illustration Preset" [ref=e63]
+              - generic [ref=e64]: Pencil Sketch
+            - heading "Pencil Sketch & Paper" [level=4] [ref=e65]
+          - generic [ref=e66]:
+            - generic [ref=e67]:
+              - img "Vintage Photograph Illustration Preset" [ref=e68]
+              - generic [ref=e69]: Vintage Photo
+            - heading "Vintage Photograph" [level=4] [ref=e70]
+          - generic [ref=e71]:
+            - generic [ref=e72]:
+              - img "Modern Digital Art Illustration Preset" [ref=e73]
+              - generic [ref=e74]: Digital Art
+            - heading "Modern Digital Art" [level=4] [ref=e75]
+          - generic [ref=e76]:
+            - generic [ref=e77]:
+              - img "Cartoon Illustration Preset" [ref=e78]
+              - generic [ref=e79]: Cartoon
+            - heading "Cartoon & Whimsical" [level=4] [ref=e80]
+      - generic [ref=e81]:
+        - heading "How the Workshop Weaves a Memoir" [level=3] [ref=e82]
+        - generic [ref=e83]:
+          - generic [ref=e84]:
+            - generic [ref=e85]: I
+            - heading "Recount the Story" [level=4] [ref=e86]
+          - generic [ref=e87]:
+            - generic [ref=e88]: II
+            - heading "Refine the Chapters" [level=4] [ref=e89]
+          - generic [ref=e90]:
+            - generic [ref=e91]: III
+            - heading "Bespoke Painting" [level=4] [ref=e92]
+          - generic [ref=e93]:
+            - generic [ref=e94]: IV
+            - heading "Cherish & Share" [level=4] [ref=e95]
+    - text:                                
+  - generic:
+    - generic:
+      - heading "Processing Memories..." [level=3]
+      - paragraph: This might take a moment depending on the size of the transcript.

@@ -40,27 +40,34 @@
     </header>
 
     <main class="main-content">
-        <!-- Settings Modal (API Key) -->
+        <!-- Settings Modal -->
         <div id="modal-settings" class="modal hidden">
             <div class="modal-content glass-card">
                 <div class="modal-header">
-                    <h2><i class="fa-solid fa-feather gold-icon"></i> Workshop Activation</h2>
+                    <h2><i class="fa-solid fa-sliders gold-icon"></i> Settings</h2>
                     <button id="btn-close-settings" class="btn-icon-close">&times;</button>
                 </div>
                 <div class="modal-body">
-                    <div class="form-group">
-                        <label for="gemini-key">Memoir Engine Key (Gemini API)</label>
-                        <div class="input-with-icon">
-                            <i class="fa-solid fa-key input-icon"></i>
-                            <input type="password" id="gemini-key" placeholder="AIzaSy..." autocomplete="off">
-                            <button id="btn-toggle-key-visibility" class="btn-input-action" type="button">
-                                <i class="fa-solid fa-eye"></i>
-                            </button>
+                    <h4 class="settings-subhead"><i class="fa-solid fa-music"></i> Background Ambience</h4>
+                    <p class="settings-note">Soft sounds to play while you read your finished book.</p>
+                    <div class="ambience-row">
+                        <label for="track-piano">Gentle Piano Music</label>
+                        <div class="audio-control">
+                            <input type="checkbox" id="track-piano" title="Toggle piano music">
+                            <audio id="audio-piano" loop src="https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3"></audio>
+                            <input type="range" id="vol-piano" min="0" max="1" step="0.1" value="0.3" title="Piano volume">
+                        </div>
+                    </div>
+                    <div class="ambience-row">
+                        <label for="track-fireplace">Fireplace Crackle</label>
+                        <div class="audio-control">
+                            <input type="checkbox" id="track-fireplace" title="Toggle fireplace sound">
+                            <input type="range" id="vol-fireplace" min="0" max="1" step="0.1" value="0.4" title="Fireplace volume">
                         </div>
                     </div>
                 </div>
                 <div class="modal-footer">
-                    <button id="btn-save-settings" class="btn btn-primary">Activate Engine</button>
+                    <button id="btn-save-settings" class="btn btn-primary">Done</button>
                 </div>
             </div>
         </div>
@@ -178,24 +185,39 @@
                 <div class="carousel-deck">
                     <div class="carousel-card glass-card">
                         <div class="card-img-wrapper">
-                            <img src="assets/story_childhood.png" alt="Watercolor Illustration Preset">
-                            <span class="card-badge">Watercolor</span>
+                            <img src="assets/style_watercolor.png" alt="Soft Watercolor Illustration Preset">
                         </div>
-                        <h4>Nostalgic Childhoods</h4>
+                        <h4>Soft Watercolor</h4>
                     </div>
                     <div class="carousel-card glass-card">
                         <div class="card-img-wrapper">
-                            <img src="assets/story_adventure.png" alt="Oil Painting Illustration Preset">
-                            <span class="card-badge">Oil Painting</span>
+                            <img src="assets/style_oil.png" alt="Classic Oil Painting Illustration Preset">
                         </div>
-                        <h4>Adventures & Journeys</h4>
+                        <h4>Classic Oil Painting</h4>
                     </div>
                     <div class="carousel-card glass-card">
                         <div class="card-img-wrapper">
-                            <img src="assets/story_family.png" alt="Pencil Sketch Illustration Preset">
-                            <span class="card-badge">Pencil Sketch</span>
+                            <img src="assets/style_pencil.png" alt="Pencil Sketch Illustration Preset">
                         </div>
-                        <h4>Wisdom & Family Years</h4>
+                        <h4>Pencil Sketch &amp; Paper</h4>
+                    </div>
+                    <div class="carousel-card glass-card">
+                        <div class="card-img-wrapper">
+                            <img src="assets/style_vintage.png" alt="Vintage Photograph Illustration Preset">
+                        </div>
+                        <h4>Vintage Photograph</h4>
+                    </div>
+                    <div class="carousel-card glass-card">
+                        <div class="card-img-wrapper">
+                            <img src="assets/style_digital.png" alt="Modern Digital Art Illustration Preset">
+                        </div>
+                        <h4>Modern Digital Art</h4>
+                    </div>
+                    <div class="carousel-card glass-card">
+                        <div class="card-img-wrapper">
+                            <img src="assets/style_cartoon.png" alt="Cartoon Illustration Preset">
+                        </div>
+                        <h4>Cartoon &amp; Whimsical</h4>
                     </div>
                 </div>
             </div>
@@ -262,22 +284,22 @@
                         <h3><i class="fa-solid fa-feather text-gold"></i> Book Configuration</h3>
                         
                         <div class="form-group">
-                            <label for="elder-name">Narrator's Name</label>
-                            <input type="text" id="elder-name" placeholder="e.g. Grandpa Joseph" required>
+                            <label for="elder-name">Your Name</label>
+                            <input type="text" id="elder-name" placeholder="e.g. Manharlal Sheth" required>
                         </div>
 
                         <div class="form-row form-row-3">
                             <div class="form-group">
-                                <label for="elder-age">Narrator Age</label>
-                                <input type="number" id="elder-age" min="1" max="120" placeholder="e.g. 78" required>
+                                <label for="elder-age">Your Age</label>
+                                <input type="number" id="elder-age" min="1" max="120" placeholder="e.g. 89" required>
                             </div>
                             <div class="form-group">
-                                <label for="elder-gender">Gender</label>
-                                <input type="text" id="elder-gender" placeholder="e.g. Woman">
+                                <label for="elder-gender">Your Gender</label>
+                                <input type="text" id="elder-gender" placeholder="e.g. Man">
                             </div>
                             <div class="form-group">
-                                <label for="elder-ethnicity">Ethnicity / Cultural Background</label>
-                                <input type="text" id="elder-ethnicity" placeholder="e.g. Punjabi Indian">
+                                <label for="elder-ethnicity">Your Ethnicity / Cultural Background</label>
+                                <input type="text" id="elder-ethnicity" placeholder="e.g. Gujarati Jain Indian">
                             </div>
                         </div>
 
@@ -289,8 +311,7 @@
                                     <option value="warm classic oil painting, rich colors, impressionist brush strokes">Classic Oil Painting</option>
                                     <option value="colored pencil sketch, vintage scrapbook texture, hand-drawn detailing">Pencil Sketch & Paper</option>
                                     <option value="nostalgic sepia vintage photograph, soft focus, 1950s camera aesthetic">Vintage Photograph</option>
-                                    <option value="vibrant modern digital painting, magical realism, warm lighting">Modern Digital Art</option>
-                                </select>
+                                    <option value="vibrant modern digital painting, magical realism, warm lighting">Modern Digital Art</option>                                    <option value="playful hand-drawn cartoon illustration, bold clean outlines, bright flat colors, whimsical animated storybook style">Cartoon &amp; Whimsical</option>                                </select>
                             </div>
 
                             <div class="form-group">
@@ -331,9 +352,17 @@
                         <!-- Tab A: Paste Transcript -->
                         <div id="tab-paste" class="tab-content active">
                             <div class="form-group">
-                                <label for="input-transcript">Paste Interview Transcript or Notes</label>
-                                <textarea id="input-transcript" rows="10" placeholder="Type or paste the transcript of the interview here. For example:
-'I was born in 1945 in a small farmhouse. My mother used to bake fresh bread every Sunday, and the smell would fill the whole valley. During the summer, we would run down to the creek...'"></textarea>
+                                <label for="input-transcript">Already have notes or a past conversation? Paste or load it <span class="label-hint">(Echo will know it and build on it)</span></label>
+                                <textarea id="input-transcript" rows="10" placeholder="Type or paste anything you already know — a transcript, a saved conversation, life notes. For example:
+'I was born in 1945 in a small farmhouse. My mother used to bake fresh bread every Sunday, and the smell would fill the whole valley. During the summer, we would run down to the creek...'
+
+You can also leave this blank and just talk to Echo."></textarea>
+                                <div class="transcript-load-row">
+                                    <button id="btn-load-transcript" class="btn btn-ghost btn-sm" type="button">
+                                        <i class="fa-solid fa-file-arrow-up"></i> Load a .txt transcript
+                                    </button>
+                                    <input type="file" id="transcript-file" accept=".txt,text/plain" hidden>
+                                </div>
                             </div>
                         </div>
 
@@ -416,9 +445,23 @@
                             <button id="btn-suggest-answer" class="btn btn-ghost btn-sm" type="button">
                                 <i class="fa-solid fa-wand-magic-sparkles"></i> Help me answer
                             </button>
+                            <button id="btn-new-topic" class="btn btn-ghost btn-sm" type="button">
+                                <i class="fa-solid fa-shuffle"></i> New topic
+                            </button>
                             <button id="btn-replay-interview-question" class="btn btn-ghost btn-sm" type="button">
                                 <i class="fa-solid fa-volume-high"></i> Say that again
                             </button>
+                        </div>
+                    </div>
+
+                    <!-- New topic chooser popover -->
+                    <div id="new-topic-popover" class="new-topic-popover hidden">
+                        <p class="new-topic-title">What would you like to talk about?</p>
+                        <input type="text" id="new-topic-input" placeholder="e.g. my marriage, my parents, my proudest moment…">
+                        <div class="new-topic-actions">
+                            <button id="btn-new-topic-go" class="btn btn-primary btn-sm" type="button">Talk about this</button>
+                            <button id="btn-new-topic-surprise" class="btn btn-secondary btn-sm" type="button"><i class="fa-solid fa-dice"></i> Surprise me</button>
+                            <button id="btn-new-topic-cancel" class="btn btn-ghost btn-sm" type="button">Cancel</button>
                         </div>
                     </div>
 
@@ -476,16 +519,14 @@
                         <button id="btn-read-aloud" class="btn btn-secondary btn-icon-text" title="Read Aloud Page">
                             <i class="fa-solid fa-volume-high"></i> <span>Read Aloud</span>
                         </button>
-                        <button id="btn-ambience-settings" class="btn btn-secondary btn-icon-text" title="Sound Ambience">
-                            <i class="fa-solid fa-music"></i> <span>Ambience</span>
-                        </button>
-                        <div class="dropdown">
-                            <button id="btn-export-dropdown" class="btn btn-secondary btn-icon-text">
+                        <div class="dropdown" id="export-dropdown">
+                            <button id="btn-export-dropdown" class="btn btn-secondary btn-icon-text" type="button">
                                 <i class="fa-solid fa-download"></i> <span>Export Book</span>
                             </button>
-                            <div class="dropdown-content">
+                            <div class="dropdown-content" id="export-dropdown-content">
                                 <a href="#" id="export-pdf"><i class="fa-solid fa-file-pdf"></i> Download PDF</a>
                                 <a href="#" id="export-html"><i class="fa-solid fa-file-code"></i> Standalone HTML</a>
+                                <a href="#" id="export-transcript"><i class="fa-solid fa-file-lines"></i> Conversation Transcript</a>
                                 <a href="#" id="export-json"><i class="fa-solid fa-file-invoice"></i> Save Memoir JSON</a>
                             </div>
                         </div>
@@ -495,31 +536,17 @@
                     </div>
                 </div>
 
-                <!-- Ambience Control Floating Panel -->
-                <div id="panel-ambience" class="ambience-panel glass-card hidden">
-                    <h4><i class="fa-solid fa-sliders"></i> Background Ambience</h4>
-                    <div class="ambience-row">
-                        <label for="track-piano">Gentle Piano Music</label>
-                        <div class="audio-control">
-                            <input type="checkbox" id="track-piano">
-                            <audio id="audio-piano" loop src="https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3"></audio>
-                            <input type="range" id="vol-piano" min="0" max="1" step="0.1" value="0.3">
-                        </div>
-                    </div>
-                    <div class="ambience-row">
-                        <label for="track-fireplace">Fireplace Crackle</label>
-                        <div class="audio-control">
-                            <input type="checkbox" id="track-fireplace">
-                            <audio id="audio-fireplace" loop src="https://assets.mixkit.co/active_storage/sfx/2464/2464-84.wav"></audio>
-                            <input type="range" id="vol-fireplace" min="0" max="1" step="0.1" value="0.4">
-                        </div>
-                    </div>
-                </div>
-
                 <!-- Virtual Double Page Book Container -->
                 <div class="book-viewport">
                     <div class="book-container" id="book-element">
                         <div class="book-spine"></div>
+
+                        <!-- Turning leaf (animated page flip) -->
+                        <div class="page-flip" id="page-flip" aria-hidden="true">
+                            <div class="flip-face flip-front"></div>
+                            <div class="flip-face flip-back"></div>
+                            <div class="flip-shadow"></div>
+                        </div>
 
                         <!-- Left Page: Illustration -->
                         <div class="book-page left-page" id="book-page-left">
