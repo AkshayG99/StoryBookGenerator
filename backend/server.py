@@ -19,15 +19,27 @@ from flask import Flask, jsonify, request
 from flask_cors import CORS
 from google import genai
 from google.genai import types
+from google.cloud import texttospeech
 
 # --- Configuration -----------------------------------------------------------
 PROJECT_ID = os.environ.get("GOOGLE_CLOUD_PROJECT", "project-4711618b-b483-407f-832")
 LOCATION = os.environ.get("GOOGLE_CLOUD_LOCATION", "us-west1")
 MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
 
+# Warm, natural Chirp 3 HD voice used for the interviewer's spoken voice.
+DEFAULT_TTS_VOICE = os.environ.get("TTS_VOICE", "en-US-Chirp3-HD-Aoede")
+
+# Cheap, fast image model for chapter illustrations (~$0.02/image), billed to
+# the project's credits. Imagen 4 Fast; falls back to Imagen 3 Fast.
+IMAGE_MODEL = os.environ.get("IMAGE_MODEL", "imagen-4.0-fast-generate-001")
+IMAGE_MODEL_FALLBACK = os.environ.get("IMAGE_MODEL_FALLBACK", "imagen-3.0-fast-generate-001")
+
 # Initialize the Vertex AI client once. This relies on ADC having been set up via
 #   gcloud auth application-default login
 client = genai.Client(vertexai=True, project=PROJECT_ID, location=LOCATION)
+
+# Cloud Text-to-Speech client (Chirp 3 HD voices), also authenticated via ADC.
+tts_client = texttospeech.TextToSpeechClient()
 
 app = Flask(__name__)
 CORS(app)  # Allow the static frontend (served on a different port) to call us.
@@ -90,6 +102,85 @@ def generate():
     )
 
 
+@app.route("/api/tts", methods=["POST"])
+def tts():
+    """Synthesize warm, natural speech with a Chirp 3: HD voice.
+
+    Request:  { "text": "...", "voice": "en-US-Chirp3-HD-Aoede", "rate": 0.96 }
+    Response: { "audioContent": "<base64 mp3>", "mimeType": "audio/mpeg" }
+    """
+    body = request.get_json(silent=True) or {}
+    text = (body.get("text") or "").strip()
+    if not text:
+        return jsonify({"error": {"message": "No text provided."}}), 400
+
+    voice_name = body.get("voice") or DEFAULT_TTS_VOICE
+    try:
+        speaking_rate = float(body.get("rate", 0.96))
+    except (TypeError, ValueError):
+        speaking_rate = 0.96
+    speaking_rate = max(0.25, min(2.0, speaking_rate))
+
+    # Language code is the first two hyphen-delimited segments, e.g. "en-US".
+    language_code = "-".join(voice_name.split("-")[:2]) or "en-US"
+
+    synthesis_input = texttospeech.SynthesisInput(text=text)
+    voice = texttospeech.VoiceSelectionParams(
+        language_code=language_code,
+        name=voice_name,
+    )
+    audio_config = texttospeech.AudioConfig(
+        audio_encoding=texttospeech.AudioEncoding.MP3,
+        speaking_rate=speaking_rate,
+    )
+
+    try:
+        response = tts_client.synthesize_speech(
+            input=synthesis_input, voice=voice, audio_config=audio_config
+        )
+    except Exception as error:  # Surface a clean error to the frontend.
+        return jsonify({"error": {"message": str(error)}}), 502
+
+    audio_b64 = base64.b64encode(response.audio_content).decode("ascii")
+    return jsonify({"audioContent": audio_b64, "mimeType": "audio/mpeg"})
+
+
+@app.route("/api/image", methods=["POST"])
+def image():
+    """Generate a chapter illustration with Vertex AI Imagen (cheap Fast tier).
+
+    Request:  { "prompt": "...", "aspectRatio": "4:3" }
+    Response: { "imageDataUrl": "data:image/png;base64,...", "model": "..." }
+    """
+    body = request.get_json(silent=True) or {}
+    prompt = (body.get("prompt") or "").strip()
+    if not prompt:
+        return jsonify({"error": {"message": "No prompt provided."}}), 400
+
+    aspect_ratio = body.get("aspectRatio") or "4:3"
+    config = types.GenerateImagesConfig(number_of_images=1, aspect_ratio=aspect_ratio)
+
+    last_error = None
+    for model_name in (IMAGE_MODEL, IMAGE_MODEL_FALLBACK):
+        try:
+            result = client.models.generate_images(
+                model=model_name, prompt=prompt, config=config
+            )
+            generated = result.generated_images
+            if not generated:
+                last_error = "Model returned no image (possibly filtered)."
+                continue
+            img = generated[0].image
+            img_bytes = img.image_bytes
+            mime = getattr(img, "mime_type", None) or "image/png"
+            data_url = f"data:{mime};base64," + base64.b64encode(img_bytes).decode("ascii")
+            return jsonify({"imageDataUrl": data_url, "model": model_name})
+        except Exception as error:  # Try the fallback model, then surface error.
+            last_error = str(error)
+
+    return jsonify({"error": {"message": last_error or "Image generation failed."}}), 502
+
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", "5000"))
-    app.run(host="127.0.0.1", port=port, debug=False)
+    app.run(host="127.0.0.1", port=port, debug=False, threaded=True)

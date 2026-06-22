@@ -313,6 +313,11 @@
                                 <option value="humorous, lighthearted, and full of grandfatherly jokes">Lighthearted & Playful</option>
                             </select>
                         </div>
+
+                        <div class="form-group">
+                            <label for="interviewer-persona">Who should interview &amp; narrate? <span class="label-hint">(voice &amp; personality)</span></label>
+                            <input type="text" id="interviewer-persona" placeholder="e.g. a warm young Indian man, a gentle older British woman">
+                        </div>
                     </div>
 
                     <!-- Source Media Card -->
@@ -371,51 +376,59 @@
                 </div>
             </section>
 
-            <!-- Wizard Panel 2: Decade Interview -->
+            <!-- Wizard Panel 2: Conversation with Echo -->
             <section id="panel-step-interview" class="wizard-panel">
-                <div class="interview-card glass-card">
-                    <!-- Auto-advance countdown badge (top-right corner) -->
-                    <div id="interview-autoadvance" class="autoadvance-badge hidden" role="button" tabindex="0" title="Tap to stay on this question">
-                        <span class="autoadvance-num">5</span>
-                        <span class="autoadvance-text">Next question<br>tap to stay</span>
+                <div class="convo-card glass-card">
+                    <!-- Echo header: avatar + speaking state + life-coverage progress -->
+                    <div class="convo-header">
+                        <div class="convo-identity">
+                            <div id="echo-avatar" class="echo-avatar">
+                                <span class="echo-orb"></span>
+                                <i class="fa-solid fa-feather-pointed"></i>
+                            </div>
+                            <div class="convo-identity-text">
+                                <h3>Echo</h3>
+                                <span id="echo-state" class="echo-state">Getting ready…</span>
+                            </div>
+                        </div>
+                        <div class="convo-progress" title="How much of your life story we've gathered">
+                            <div class="convo-progress-bar"><span id="convo-progress-fill"></span></div>
+                            <span id="convo-progress-label" class="convo-progress-label">Just getting started</span>
+                        </div>
                     </div>
 
-                    <div class="interview-top">
-                        <span id="interview-decade-pill" class="interview-decade">Loading…</span>
-                        <span id="interview-progress-text" class="interview-progress">Question 0 of 0</span>
+                    <!-- Scrolling conversation transcript -->
+                    <div id="interview-chat" class="convo-chat" aria-live="polite"></div>
+
+                    <!-- The person's current turn -->
+                    <div class="convo-input-area">
+                        <div id="interview-dictation-status" class="convo-mic-status">Listen to Echo, then just talk.</div>
+                        <div class="convo-input-row">
+                            <button id="btn-interview-record" class="btn-record-lg" type="button" title="Tap to talk">
+                                <i class="fa-solid fa-microphone"></i>
+                            </button>
+                            <textarea id="interview-answer-input" rows="2" placeholder="Speak, or type your answer here…"></textarea>
+                            <button id="btn-send-answer" class="btn-send" type="button" title="Send to Echo">
+                                <i class="fa-solid fa-paper-plane"></i>
+                            </button>
+                        </div>
+                        <div class="convo-secondary-actions">
+                            <button id="btn-suggest-answer" class="btn btn-ghost btn-sm" type="button">
+                                <i class="fa-solid fa-wand-magic-sparkles"></i> Help me answer
+                            </button>
+                            <button id="btn-replay-interview-question" class="btn btn-ghost btn-sm" type="button">
+                                <i class="fa-solid fa-volume-high"></i> Say that again
+                            </button>
+                        </div>
                     </div>
 
-                    <div class="interview-question">
-                        <p id="interview-question-text">Preparing your personalized interview…</p>
-                        <button id="btn-replay-interview-question" class="interview-listen" type="button">
-                            <i class="fa-solid fa-volume-high"></i> Hear it again
-                        </button>
-                    </div>
+                    <!-- Hidden elements kept for script compatibility -->
+                    <h3 id="interview-question-title" class="visually-hidden">Conversation</h3>
+                    <p id="interview-question-text" class="visually-hidden"></p>
 
-                    <div class="interview-answer">
-                        <textarea id="interview-answer-input" rows="5" placeholder="Your answer appears here. Speak, type, or let AI help…"></textarea>
-                        <div id="interview-dictation-status" class="interview-mic-status">Listen to the question, then share your answer.</div>
-                    </div>
-
-                    <div class="interview-controls">
-                        <button id="btn-interview-record" class="btn-record-lg" type="button" title="Speak your answer">
-                            <i class="fa-solid fa-microphone"></i>
-                        </button>
-                        <button id="btn-suggest-answer" class="btn btn-secondary" type="button">
-                            <i class="fa-solid fa-wand-magic-sparkles"></i> Answer with AI
-                        </button>
-                        <button id="btn-skip-question" class="btn btn-ghost" type="button">
-                            <i class="fa-solid fa-forward"></i> Skip
-                        </button>
-                    </div>
-
-                    <!-- Hidden title element kept for compatibility with scripts -->
-                    <h3 id="interview-question-title" class="visually-hidden">Question</h3>
-
-                    <div class="interview-footer">
+                    <div class="convo-footer">
                         <button id="btn-back-to-step1-from-interview" class="btn btn-ghost"><i class="fa-solid fa-arrow-left"></i> Back</button>
-                        <button id="btn-next-interview-question" class="btn btn-primary">Save &amp; Next <i class="fa-solid fa-arrow-right"></i></button>
-                        <button id="btn-finish-interview" class="btn btn-secondary"><i class="fa-solid fa-check"></i> Finish &amp; Build Book</button>
+                        <button id="btn-finish-interview" class="btn btn-primary"><i class="fa-solid fa-book-open"></i> Create my book</button>
                     </div>
                 </div>
             </section>
@@ -570,6 +583,7 @@
     </div>
 
     <!-- Scripts -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="gemini.js"></script>
     <script src="book.js"></script>
 </body>

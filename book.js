@@ -31,7 +31,25 @@ document.addEventListener("DOMContentLoaded", () => {
         generatedBook: null, // { title, subtitle, pages: [{ chapterTitle, narrative, imagePrompt, imageSrc }] }
         currentPageIndex: 0,
         isRecording: false,
-        speechUtterance: null
+        speechUtterance: null,
+        // --- Conversational interview ("Echo") ---
+        conversation: [],      // [{ role: 'agent'|'user', text }]
+        coverage: [],          // life topics Echo has covered (hidden agenda)
+        convTurnCount: 0,      // number of answers the person has given
+        convEnough: false,     // Echo has gathered enough for a full book
+        convBusy: false,       // a turn is in flight
+        lastSuggested: "",     // last AI-suggested answer for "Help me answer"
+        lastAgentText: "",     // last thing Echo said (for "Say that again")
+        autoSendTimer: null,
+        autoSendInterval: null,
+        // --- Interviewer / narrator persona + voice ---
+        interviewerDesc: "",   // free-text description the user typed
+        interviewerVoice: null,    // resolved Chirp voice name e.g. en-IN-Chirp3-HD-Puck
+        interviewerLang: "en-US",
+        interviewerPersona: null,  // { description, style } for prompt flavor
+        // --- Hands-free voice ---
+        silenceTimer: null,
+        handsFree: true
     };
 
     // --- DOM Elements ---
@@ -75,6 +93,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const artStyleSelect = document.getElementById("illustration-style");
     const bookLengthSelect = document.getElementById("book-length");
     const toneSelect = document.getElementById("narration-tone");
+    const interviewerPersonaInput = document.getElementById("interviewer-persona");
     const tabButtons = document.querySelectorAll(".tab-btn");
     const tabContents = document.querySelectorAll(".tab-content");
     const pasteTranscriptArea = document.getElementById("input-transcript");
@@ -336,6 +355,11 @@ document.addEventListener("DOMContentLoaded", () => {
                 }
             }
 
+            // Hands-free: in conversation mode, auto-send after a pause of silence.
+            if (state.activeStep === 2) {
+                if (finalTranscript || interimTranscript) resetSilenceAutoSend();
+            }
+
             if (state.activeStep !== 2) {
                 dictationPreview.innerHTML = pasteTranscriptArea.value + 
                     (interimTranscript ? `<span style="opacity: 0.5;"> ${interimTranscript}</span>` : "");
@@ -566,344 +590,273 @@ document.addEventListener("DOMContentLoaded", () => {
         };
     }
 
-    function getCurrentInterviewCursor() {
-        if (!state.interviewFlow || !state.interviewFlow.length) return null;
+    // ============================================================
+    // CONVERSATIONAL INTERVIEW — "Echo", a warm agent with a hidden
+    // agenda to gently draw out the person's whole life story.
+    // ============================================================
 
-        let globalIndex = 0;
-        for (let d = 0; d < state.interviewFlow.length; d++) {
-            const decade = state.interviewFlow[d];
-            for (let q = 0; q < decade.questionSet.length; q++) {
-                if (globalIndex === state.interviewQuestionCursor) {
-                    return { decadeIndex: d, questionIndex: q, decade, question: decade.questionSet[q] };
-                }
-                globalIndex++;
-            }
-        }
+    const interviewChat = document.getElementById("interview-chat");
+    const sendAnswerBtn = document.getElementById("btn-send-answer");
+    const echoStateEl = document.getElementById("echo-state");
+    const echoAvatar = document.getElementById("echo-avatar");
+    const convoProgressFill = document.getElementById("convo-progress-fill");
+    const convoProgressLabel = document.getElementById("convo-progress-label");
 
-        return null;
-    }
+    const TOTAL_LIFE_TOPICS = 12; // mirrors LIFE_COVERAGE_TOPICS in gemini.js
 
-    function getInterviewTotalQuestions() {
-        if (!state.interviewFlow) return 0;
-        return state.interviewFlow.reduce((sum, decade) => sum + decade.questionSet.length, 0);
-    }
-
-    function buildDefaultQuestionSet(decadeLabel) {
-        return [
-            {
-                id: `${decadeLabel}-base-1`,
-                type: "base",
-                text: `What memories stand out most from your ${decadeLabel}?`
-            },
-            {
-                id: `${decadeLabel}-base-2`,
-                type: "base",
-                text: `Who shaped your life the most during your ${decadeLabel}, and how?`
-            },
-            {
-                id: `${decadeLabel}-base-3`,
-                type: "base",
-                text: `What lessons from your ${decadeLabel} would you want your family to remember?`
-            }
-        ];
-    }
-
-    async function ensureDecadeQuestionsLoaded(decadeIndex) {
-        const decade = state.interviewFlow[decadeIndex];
-        if (!decade || decade.loaded) return;
-
-        const previousDecade = state.interviewFlow[decadeIndex - 1];
-        const previousSummary = previousDecade ? (state.interviewDecadeSummaries[previousDecade.key] || "") : "";
-
-        try {
-            const response = await generateDecadeInterviewQuestions({
-                profile: getProfilePayload(),
-                decadeLabel: decade.short,
-                previousDecadeSummary: previousSummary
-            });
-
-            decade.questionSet = (response.questions || []).slice(0, 3).map((text, idx) => ({
-                id: `${decade.key}-base-${idx + 1}`,
-                type: "base",
-                text
-            }));
-            decade.loaded = true;
-        } catch (error) {
-            console.warn("Failed to load decade interview questions:", error);
-            decade.questionSet = buildDefaultQuestionSet(decade.short);
-            decade.loaded = true;
-            showToast("Using fallback interview questions for this decade.", "info");
+    function setEchoState(text, mode) {
+        if (echoStateEl) echoStateEl.textContent = text;
+        if (echoAvatar) {
+            echoAvatar.classList.remove("speaking", "listening", "thinking");
+            if (mode) echoAvatar.classList.add(mode);
         }
     }
 
-    async function maybeLoadProbingQuestions(decadeIndex) {
-        const decade = state.interviewFlow[decadeIndex];
-        if (!decade || decade.probingLoaded) return;
+    function escapeHtml(str) {
+        return String(str || "").replace(/[&<>"']/g, (c) => ({
+            "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+        }[c]));
+    }
 
-        const baseQuestions = decade.questionSet.filter((q) => q.type === "base");
-        if (baseQuestions.length < 3) return;
+    function addChatBubble(role, text) {
+        if (!interviewChat) return null;
+        const row = document.createElement("div");
+        row.className = `chat-row ${role}`;
+        row.innerHTML = role === "agent"
+            ? `<div class="chat-avatar"><i class="fa-solid fa-feather-pointed"></i></div>
+               <div class="chat-bubble agent">${escapeHtml(text)}</div>`
+            : `<div class="chat-bubble user">${escapeHtml(text)}</div>`;
+        interviewChat.appendChild(row);
+        interviewChat.scrollTop = interviewChat.scrollHeight;
+        return row;
+    }
 
-        const hasAnsweredAllBase = baseQuestions.every((question) => {
-            const ans = state.interviewAnswers[question.id];
-            return typeof ans === "string";
-        });
-        if (!hasAnsweredAllBase) return;
+    function showTypingBubble() {
+        if (!interviewChat) return null;
+        const row = document.createElement("div");
+        row.className = "chat-row agent typing";
+        row.innerHTML = `<div class="chat-avatar"><i class="fa-solid fa-feather-pointed"></i></div>
+            <div class="chat-bubble agent"><span class="typing-dots"><span></span><span></span><span></span></span></div>`;
+        interviewChat.appendChild(row);
+        interviewChat.scrollTop = interviewChat.scrollHeight;
+        return row;
+    }
 
-        const previousDecade = state.interviewFlow[decadeIndex - 1];
-        const previousSummary = previousDecade ? (state.interviewDecadeSummaries[previousDecade.key] || "") : "";
-
-        const baseQaPairs = baseQuestions.map((question) => ({
-            question: question.text,
-            answer: state.interviewAnswers[question.id] || ""
-        }));
-
-        try {
-            const probing = await generateDecadeProbingQuestions({
-                profile: getProfilePayload(),
-                decadeLabel: decade.short,
-                baseQaPairs,
-                previousDecadeSummary: previousSummary,
-                maxQuestions: 5
-            });
-
-            const probingQuestions = (probing.probingQuestions || []).slice(0, 5).map((text, idx) => ({
-                id: `${decade.key}-probe-${idx + 1}`,
-                type: "probe",
-                text
-            }));
-
-            decade.questionSet = [...decade.questionSet, ...probingQuestions];
-            decade.probingLoaded = true;
-        } catch (error) {
-            console.warn("Failed to load probing questions:", error);
-            decade.probingLoaded = true;
-            showToast("Could not generate probing questions for this decade.", "info");
+    function updateCoverageUI() {
+        const pct = Math.min(100, Math.round((state.coverage.length / TOTAL_LIFE_TOPICS) * 100));
+        if (convoProgressFill) convoProgressFill.style.width = `${pct}%`;
+        if (convoProgressLabel) {
+            let label = "Just getting started";
+            if (pct >= 85) label = "Your story is nearly complete";
+            else if (pct >= 55) label = "Coming together beautifully";
+            else if (pct >= 25) label = "We're getting somewhere";
+            convoProgressLabel.textContent = label;
         }
     }
 
-    function buildDecadeSummary(decade) {
-        const lines = decade.questionSet.map((question) => {
-            const answer = (state.interviewAnswers[question.id] || "").trim();
-            if (!answer) return null;
-            return `${question.text} ${answer}`;
-        }).filter(Boolean);
-
-        return lines.join(" ").slice(0, 420);
-    }
-
-    function buildInterviewTranscript() {
-        const sections = [];
-        sections.push(`Narrator profile: ${state.elderName}, age ${state.elderAge}, gender ${state.elderGender || "not specified"}, background ${state.elderEthnicity || "not specified"}.`);
-
-        if (state.transcriptText && state.transcriptText.trim()) {
-            sections.push(`Preloaded notes/transcript:\n${state.transcriptText.trim()}`);
-        }
-
-        state.interviewFlow.forEach((decade) => {
-            const qaLines = [];
-            decade.questionSet.forEach((question) => {
-                const answer = (state.interviewAnswers[question.id] || "").trim();
-                if (!answer) return;
-                qaLines.push(`Q: ${question.text}\nA: ${answer}`);
-            });
-
-            if (qaLines.length) {
-                sections.push(`${decade.label}\n${qaLines.join("\n\n")}`);
-            }
-        });
-
-        return sections.join("\n\n");
-    }
-
-    async function initializeInterviewFlow() {
-        state.interviewFlow = computeDecadeRanges(state.elderAge);
-        state.interviewQuestionCursor = 0;
-        state.interviewAnswers = {};
-        state.interviewDecadeSummaries = {};
-
-        loadingOverlayTitle.textContent = "Preparing Interview...";
-        loadingOverlaySubtitle.textContent = "Generating decade-specific starter questions.";
-        loadingOverlay.classList.remove("hidden");
-
-        await ensureDecadeQuestionsLoaded(0);
-        loadingOverlay.classList.add("hidden");
-        renderInterviewQuestion();
-    }
-
-    function renderInterviewQuestion() {
-        clearInterviewTimers();
-        const cursor = getCurrentInterviewCursor();
-        const total = getInterviewTotalQuestions();
-
-        if (!cursor) {
-            if (interviewQuestionTitle) interviewQuestionTitle.textContent = "Interview Complete";
-            interviewQuestionText.textContent = "That's everything for now. Tap \"Finish & Build Book\" whenever you're ready.";
-            interviewProgressText.textContent = `Question ${Math.min(state.interviewQuestionCursor + 1, total)} of ${total}`;
-            interviewDecadePill.textContent = "All done";
-            interviewAnswerInput.value = "";
-            setMicStatus("Interview complete. You can review answers or build the book.");
-            return;
-        }
-
-        if (interviewQuestionTitle) {
-            interviewQuestionTitle.textContent = cursor.question.type === "probe" ? "Follow-up question" : "Question";
-        }
-        interviewQuestionText.textContent = cursor.question.text;
-        interviewProgressText.textContent = `Question ${state.interviewQuestionCursor + 1} of ${total}`;
-        interviewDecadePill.textContent = cursor.decade.label;
-        interviewAnswerInput.value = state.interviewAnswers[cursor.question.id] || "";
-
-        // Human auto-flow: read the question aloud, then auto-arm the microphone.
-        speakQuestionThenArmMic(cursor.question.text);
-    }
-
-    // --- Interview auto-flow (read aloud -> auto mic -> auto advance) ---
     function clearInterviewTimers() {
         if (autoMicTimer) { clearTimeout(autoMicTimer); autoMicTimer = null; }
         if (autoMicCountInterval) { clearInterval(autoMicCountInterval); autoMicCountInterval = null; }
-        if (autoAdvanceTimer) { clearTimeout(autoAdvanceTimer); autoAdvanceTimer = null; }
-        if (autoAdvanceInterval) { clearInterval(autoAdvanceInterval); autoAdvanceInterval = null; }
-        hideAutoAdvanceBadge();
+        if (state.autoSendTimer) { clearTimeout(state.autoSendTimer); state.autoSendTimer = null; }
+        if (state.autoSendInterval) { clearInterval(state.autoSendInterval); state.autoSendInterval = null; }
+        if (state.silenceTimer) { clearTimeout(state.silenceTimer); state.silenceTimer = null; }
     }
 
-    function speakQuestionThenArmMic(text) {
-        if (!window.speechSynthesis) {
-            armMicCountdown();
-            return;
-        }
-        stopSpeech();
-        const utt = new SpeechSynthesisUtterance(text);
-        utt.rate = 0.92;
-        utt.pitch = 1;
-
-        const voices = window.speechSynthesis.getVoices();
-        const chosen = voices.find(v => v.name.includes("Google US English") || v.name.includes("Samantha") || v.lang === "en-US");
-        if (chosen) utt.voice = chosen;
-
-        utt.onend = () => armMicCountdown();
-        utt.onerror = () => armMicCountdown();
-        state.speechUtterance = utt;
-        setMicStatus("Listening to the question…");
-        window.speechSynthesis.speak(utt);
+    // Hands-free: when the person pauses for a moment, send what they said.
+    function resetSilenceAutoSend() {
+        if (state.silenceTimer) { clearTimeout(state.silenceTimer); state.silenceTimer = null; }
+        if (!state.handsFree) return;
+        setEchoState("Listening — your turn", "listening");
+        state.silenceTimer = setTimeout(() => {
+            state.silenceTimer = null;
+            if (state.activeStep !== 2 || state.convBusy) return;
+            if (!interviewAnswerInput.value.trim()) return;
+            if (state.isRecording || state.isFallbackRecording) stopDictation(true);
+            setTimeout(() => submitAnswer(), 250);
+        }, 2600);
     }
 
-    function armMicCountdown() {
-        // Don't auto-start if user already answered or moved on.
+    // Echo says something out loud (Chirp voice) and shows it as a chat bubble.
+    async function echoSpeak(text, { arm = true } = {}) {
+        state.lastAgentText = text;
+        state.conversation.push({ role: "agent", text });
+        persistConversation();
+        addChatBubble("agent", text);
+        setEchoState("Speaking…", "speaking");
+        try {
+            await speakWithChirp(text, { rate: 0.96, voice: state.interviewerVoice });
+        } catch (_) { /* ignore voice errors */ }
+        if (state.activeStep !== 2) return;
+        if (arm) armMicForAnswer();
+        else setEchoState("Ready", null);
+    }
+
+    function armMicForAnswer() {
         if (state.activeStep !== 2) return;
         if (state.isRecording || state.isFallbackRecording) return;
-
-        let count = 3;
-        setMicStatus(`Get ready… your microphone turns on in ${count}…`);
-        autoMicCountInterval = setInterval(() => {
-            count -= 1;
-            if (count > 0) {
-                setMicStatus(`Get ready… your microphone turns on in ${count}…`);
-            }
-        }, 1000);
-
+        setEchoState("Listening — your turn", "listening");
+        setMicStatus("Your turn — just talk. (Tap the mic if it doesn't start.)");
         autoMicTimer = setTimeout(() => {
-            if (autoMicCountInterval) { clearInterval(autoMicCountInterval); autoMicCountInterval = null; }
-            if (state.activeStep === 2 && !state.isRecording && !state.isFallbackRecording) {
-                setMicStatus("Microphone on — share your answer, then tap the mic to finish.");
+            if (state.activeStep === 2 && !state.isRecording && !state.isFallbackRecording && !state.convBusy) {
                 startDictation();
             }
-        }, 3000);
+        }, 900);
     }
 
-    // Called once an answer has been captured (voice transcription complete).
+    // Called when a voice answer has been captured (transcription complete).
     function onAnswerCaptured() {
         if (state.activeStep !== 2) return;
         if (!interviewAnswerInput.value.trim()) return;
-        startAutoAdvanceCountdown();
-    }
-
-    function startAutoAdvanceCountdown() {
+        // Gentle auto-send so elders don't have to hunt for a button —
+        // but with a window to keep talking and add more.
         clearInterviewTimers();
-        if (!autoAdvanceBadge) return;
-
-        let remaining = 5;
-        showAutoAdvanceBadge(remaining);
-
-        autoAdvanceInterval = setInterval(() => {
+        let remaining = 4;
+        setMicStatus(`Sending in ${remaining}… keep talking to add more.`);
+        state.autoSendInterval = setInterval(() => {
             remaining -= 1;
             if (remaining <= 0) {
-                clearInterval(autoAdvanceInterval);
-                autoAdvanceInterval = null;
-                hideAutoAdvanceBadge();
-                goToNextInterviewQuestion();
+                clearInterval(state.autoSendInterval); state.autoSendInterval = null;
+                submitAnswer();
             } else {
-                if (autoAdvanceNum) autoAdvanceNum.textContent = String(remaining);
+                setMicStatus(`Sending in ${remaining}… keep talking to add more.`);
             }
         }, 1000);
     }
 
-    function showAutoAdvanceBadge(seconds) {
-        if (!autoAdvanceBadge) return;
-        if (autoAdvanceNum) autoAdvanceNum.textContent = String(seconds);
-        autoAdvanceBadge.classList.remove("hidden");
-        autoAdvanceBadge.classList.add("counting");
+    async function initializeConversation() {
+        state.conversation = [];
+        state.coverage = [];
+        state.convTurnCount = 0;
+        state.convEnough = false;
+        state.convBusy = false;
+        state.lastSuggested = "";
+        state.lastAgentText = "";
+        if (interviewChat) interviewChat.innerHTML = "";
+        if (interviewAnswerInput) interviewAnswerInput.value = "";
+        if (finishInterviewBtn) finishInterviewBtn.classList.remove("pulse-ready");
+        updateCoverageUI();
+
+        setEchoState("Thinking…", "thinking");
+        const typing = showTypingBubble();
+        let opening;
+        try {
+            opening = await startConversation(getProfilePayload(), state.interviewerPersona);
+        } catch (error) {
+            if (typing) typing.remove();
+            throw error;
+        }
+        if (typing) typing.remove();
+        await echoSpeak(opening.say);
     }
 
-    function hideAutoAdvanceBadge() {
-        if (!autoAdvanceBadge) return;
-        autoAdvanceBadge.classList.add("hidden");
-        autoAdvanceBadge.classList.remove("counting");
+    // Persist the running conversation so a story is never lost on refresh.
+    function persistConversation() {
+        try {
+            localStorage.setItem("echo_conversation", JSON.stringify({
+                profile: getProfilePayload(),
+                persona: state.interviewerPersona,
+                coverage: state.coverage,
+                conversation: state.conversation,
+                savedAt: Date.now()
+            }));
+        } catch (_) { /* storage may be full or blocked; non-fatal */ }
     }
 
-    async function goToNextInterviewQuestion() {
-        const cursor = getCurrentInterviewCursor();
-        if (!cursor) return;
-
+    async function submitAnswer() {
+        if (state.convBusy) return;
+        const text = (interviewAnswerInput.value || "").trim();
+        if (!text) {
+            setMicStatus("Share a little something, then I'll keep us going.");
+            return;
+        }
         clearInterviewTimers();
-        stopSpeech();
+        stopChirp();
         if (state.isRecording || state.isFallbackRecording) stopDictation(true);
 
-        if (nextInterviewQuestionBtn) nextInterviewQuestionBtn.disabled = true;
+        state.convBusy = true;
+        state.conversation.push({ role: "user", text });
+        persistConversation();
+        addChatBubble("user", text);
+        interviewAnswerInput.value = "";
+        state.convTurnCount += 1;
+
+        setEchoState("Thinking…", "thinking");
+        setMicStatus("Echo is thinking about what you said…");
+        const typing = showTypingBubble();
+
         try {
-            const answer = interviewAnswerInput.value.trim();
-            state.interviewAnswers[cursor.question.id] = answer;
+            const result = await continueConversation({
+                profile: getProfilePayload(),
+                history: state.conversation,
+                covered: state.coverage,
+                turnCount: state.convTurnCount,
+                minTurns: 8,
+                persona: state.interviewerPersona
+            });
+            if (typing) typing.remove();
 
-            if (cursor.question.type === "base") {
-                await maybeLoadProbingQuestions(cursor.decadeIndex);
+            state.coverage = result.covered || state.coverage;
+            state.lastSuggested = result.suggested_answer || "";
+            updateCoverageUI();
+
+            await echoSpeak(result.say);
+
+            if (result.enough && !state.convEnough) {
+                state.convEnough = true;
+                markReadyToFinish();
             }
-
-            const decade = state.interviewFlow[cursor.decadeIndex];
-            const isLastQuestionInDecade = cursor.questionIndex === decade.questionSet.length - 1;
-            if (isLastQuestionInDecade) {
-                state.interviewDecadeSummaries[decade.key] = buildDecadeSummary(decade);
-                if (cursor.decadeIndex + 1 < state.interviewFlow.length) {
-                    await ensureDecadeQuestionsLoaded(cursor.decadeIndex + 1);
-                }
-            }
-
-            state.interviewQuestionCursor += 1;
-            renderInterviewQuestion();
+        } catch (error) {
+            if (typing) typing.remove();
+            console.error("Conversation turn failed:", error);
+            showToast("Echo had trouble responding: " + error.message, "error");
+            setMicStatus("Something hiccuped. Tap the mic to try again.");
         } finally {
-            if (nextInterviewQuestionBtn) nextInterviewQuestionBtn.disabled = false;
+            state.convBusy = false;
         }
     }
 
+    function markReadyToFinish() {
+        if (finishInterviewBtn) finishInterviewBtn.classList.add("pulse-ready");
+        showToast("Echo has gathered a wonderful story. Create your book whenever you're ready.", "success");
+    }
+
+    function buildConversationTranscript() {
+        const sections = [];
+        sections.push(`Narrator profile: ${state.elderName}, age ${state.elderAge}, gender ${state.elderGender || "not specified"}, background ${state.elderEthnicity || "not specified"}.`);
+        if (state.transcriptText && state.transcriptText.trim()) {
+            sections.push(`Preloaded notes:\n${state.transcriptText.trim()}`);
+        }
+        const lines = [];
+        state.conversation.forEach((m) => {
+            if (m.role === "agent") lines.push(`Interviewer: ${m.text}`);
+            else lines.push(`${state.elderName || "Narrator"}: ${m.text}`);
+        });
+        if (lines.length) sections.push(`Life-story conversation:\n${lines.join("\n")}`);
+        return sections.join("\n\n");
+    }
+
     async function generateOutlineFromInterview() {
-        const combinedTranscript = buildInterviewTranscript();
-        const hasAnsweredQuestions = Object.values(state.interviewAnswers)
-            .some((answer) => typeof answer === "string" && answer.trim().length > 0);
+        const combinedTranscript = buildConversationTranscript();
+        const hasConversation = state.conversation.some(
+            (m) => m.role === "user" && m.text && m.text.trim().length > 0
+        );
         const hasPreloadedText = !!pasteTranscriptArea.value.trim();
         const hasUploadedMedia = !!state.audioFile;
 
-        if (!hasAnsweredQuestions && !hasPreloadedText && !hasUploadedMedia) {
-            showToast("Please answer at least one interview question before continuing.", "error");
+        if (!hasConversation && !hasPreloadedText && !hasUploadedMedia) {
+            showToast("Chat with Echo a little first, so there's a story to turn into a book.", "error");
             return;
         }
 
         state.transcriptText = combinedTranscript;
 
         generationLog.innerHTML = "";
-        loadingOverlayTitle.textContent = "Analyzing Memories...";
-        loadingOverlaySubtitle.textContent = "The editor is organizing decade interviews into a memoir structure.";
+        loadingOverlayTitle.textContent = "Weaving your story...";
+        loadingOverlaySubtitle.textContent = "Echo is shaping your conversation into a beautiful memoir.";
         loadingOverlay.classList.remove("hidden");
 
         try {
-            addLog("Compiling interview transcript...", "info");
+            addLog("Reading back through your conversation...", "info");
 
             const outline = await generateBookOutline({
                 elderName: state.elderName,
@@ -1143,6 +1096,7 @@ document.addEventListener("DOMContentLoaded", () => {
             state.artStyle = artStyleSelect.value;
             state.bookLength = parseInt(bookLengthSelect.value);
             state.narrationTone = toneSelect.value;
+            state.interviewerDesc = interviewerPersonaInput ? interviewerPersonaInput.value.trim() : "";
             state.transcriptText = pasteTranscriptArea.value.trim();
 
             if (!getApiKey()) {
@@ -1173,44 +1127,51 @@ document.addEventListener("DOMContentLoaded", () => {
             }
 
             try {
-                await initializeInterviewFlow();
                 setStep(2);
-                showToast("Interview ready. Start answering decade-by-decade questions.", "success");
+                showToast("Say hello to Echo — just talk naturally.", "success");
+                // Resolve the interviewer/narrator voice persona (non-blocking-ish).
+                setEchoState("Getting ready…", "thinking");
+                try {
+                    const persona = await resolveInterviewerPersona(state.interviewerDesc);
+                    state.interviewerVoice = persona.voiceName;
+                    state.interviewerLang = persona.languageCode;
+                    state.interviewerPersona = { description: persona.description, style: persona.style };
+                } catch (_) {
+                    state.interviewerVoice = null;
+                    state.interviewerPersona = null;
+                }
+                await initializeConversation();
             } catch (error) {
-                showToast(`Could not start interview: ${error.message}`, "error");
+                showToast(`Could not start the conversation: ${error.message}`, "error");
             }
         });
 
         if (backToStep1FromInterviewBtn) {
             backToStep1FromInterviewBtn.addEventListener("click", () => {
                 clearInterviewTimers();
-                stopSpeech();
+                stopChirp();
                 if (state.isRecording || state.isFallbackRecording) stopDictation();
                 setStep(1);
             });
         }
 
+        // "Say that again" — re-speak Echo's last line.
         if (replayInterviewQuestionBtn) {
             replayInterviewQuestionBtn.addEventListener("click", () => {
-                const cursor = getCurrentInterviewCursor();
-                if (!cursor || !cursor.question) return;
-
+                if (!state.lastAgentText) return;
                 clearInterviewTimers();
-                stopSpeech();
-                state.speechUtterance = new SpeechSynthesisUtterance(cursor.question.text);
-                state.speechUtterance.rate = 0.92;
-                state.speechUtterance.pitch = 1;
-                state.speechUtterance.onend = () => armMicCountdown();
-                window.speechSynthesis.speak(state.speechUtterance);
+                stopChirp();
+                setEchoState("Speaking…", "speaking");
+                speakWithChirp(state.lastAgentText, { rate: 0.96 }).then(() => {
+                    if (state.activeStep === 2) armMicForAnswer();
+                });
             });
         }
 
         if (interviewRecordBtn) {
             interviewRecordBtn.addEventListener("click", () => {
                 // Any manual mic interaction cancels pending auto-timers.
-                if (autoMicTimer) { clearTimeout(autoMicTimer); autoMicTimer = null; }
-                if (autoMicCountInterval) { clearInterval(autoMicCountInterval); autoMicCountInterval = null; }
-                if (autoAdvanceInterval) { clearInterval(autoAdvanceInterval); autoAdvanceInterval = null; hideAutoAdvanceBadge(); }
+                clearInterviewTimers();
 
                 const wasWebSpeechRecording = state.isRecording && !state.useFallbackSpeech;
 
@@ -1221,98 +1182,54 @@ document.addEventListener("DOMContentLoaded", () => {
                         setTimeout(() => onAnswerCaptured(), 400);
                     }
                 } else {
+                    stopChirp();
                     startDictation();
                 }
             });
         }
 
+        // Send the current answer to Echo.
+        if (sendAnswerBtn) {
+            sendAnswerBtn.addEventListener("click", () => {
+                clearInterviewTimers();
+                submitAnswer();
+            });
+        }
+
+        // "Help me answer" — drop in a gentle first-person example they can edit.
         if (suggestAnswerBtn) {
-            suggestAnswerBtn.addEventListener("click", async () => {
-                const cursor = getCurrentInterviewCursor();
-                if (!cursor || !cursor.question) return;
-
+            suggestAnswerBtn.addEventListener("click", () => {
                 clearInterviewTimers();
-                stopSpeech();
-                if (state.isRecording || state.isFallbackRecording) stopDictation();
-
-                if (!getApiKey()) {
-                    settingsModal.classList.remove("hidden");
-                    showToast("Add your Gemini key first to use Answer with AI.", "error");
-                    return;
-                }
-
-                suggestAnswerBtn.disabled = true;
-                const originalLabel = suggestAnswerBtn.innerHTML;
-                suggestAnswerBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Thinking…`;
-                setMicStatus("Drafting an answer you can edit…");
-
-                try {
-                    const prevDecade = state.interviewFlow[cursor.decadeIndex - 1];
-                    const prevSummary = prevDecade ? (state.interviewDecadeSummaries[prevDecade.key] || "") : "";
-                    const suggestion = await suggestInterviewAnswer({
-                        profile: getProfilePayload(),
-                        decadeLabel: cursor.decade.short,
-                        question: cursor.question.text,
-                        previousDecadeSummary: prevSummary
-                    });
-                    interviewAnswerInput.value = suggestion;
-                    setMicStatus("AI drafted an answer — edit it, or tap Save & Next.");
-                } catch (err) {
-                    console.error("Answer with AI failed:", err);
-                    showToast("Could not draft an answer: " + err.message, "error");
-                    setMicStatus("Couldn't draft an answer. Type or record instead.");
-                } finally {
-                    suggestAnswerBtn.disabled = false;
-                    suggestAnswerBtn.innerHTML = originalLabel;
+                if (state.lastSuggested) {
+                    interviewAnswerInput.value = state.lastSuggested;
+                    interviewAnswerInput.focus();
+                    setMicStatus("Here's a starting point — change anything, then send.");
+                } else {
+                    setMicStatus("Just say whatever comes to mind — there's no wrong answer.");
+                    interviewAnswerInput.focus();
                 }
             });
         }
 
-        if (skipQuestionBtn) {
-            skipQuestionBtn.addEventListener("click", () => {
-                const cursor = getCurrentInterviewCursor();
-                if (!cursor) return;
-                clearInterviewTimers();
-                stopSpeech();
-                if (state.isRecording || state.isFallbackRecording) stopDictation();
-                interviewAnswerInput.value = "";
-                goToNextInterviewQuestion();
-            });
-        }
-
-        if (autoAdvanceBadge) {
-            autoAdvanceBadge.addEventListener("click", () => {
-                // User wants to stay and review/edit this answer.
-                if (autoAdvanceInterval) { clearInterval(autoAdvanceInterval); autoAdvanceInterval = null; }
-                hideAutoAdvanceBadge();
-                setMicStatus("Staying here. Edit your answer, then tap Save & Next.");
-                interviewAnswerInput.focus();
-            });
-        }
-
-        // Typing manually cancels the auto-mic arming so it doesn't interrupt.
+        // Enter sends; Shift+Enter makes a new line.
         if (interviewAnswerInput) {
+            interviewAnswerInput.addEventListener("keydown", (e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    clearInterviewTimers();
+                    submitAnswer();
+                }
+            });
+            // Typing cancels the auto-mic arming so it doesn't interrupt.
             interviewAnswerInput.addEventListener("input", () => {
                 if (autoMicTimer) { clearTimeout(autoMicTimer); autoMicTimer = null; }
-                if (autoMicCountInterval) { clearInterval(autoMicCountInterval); autoMicCountInterval = null; }
-            });
-        }
-
-        if (nextInterviewQuestionBtn) {
-            nextInterviewQuestionBtn.addEventListener("click", async () => {
-                const cursor = getCurrentInterviewCursor();
-                if (!cursor) {
-                    showToast("No active question. Tap Finish & Build Book to continue.", "info");
-                    return;
-                }
-                await goToNextInterviewQuestion();
             });
         }
 
         if (finishInterviewBtn) {
             finishInterviewBtn.addEventListener("click", async () => {
                 clearInterviewTimers();
-                stopSpeech();
+                stopChirp();
                 if (state.isRecording || state.isFallbackRecording) stopDictation();
                 finishInterviewBtn.disabled = true;
                 try {
@@ -1384,20 +1301,21 @@ document.addEventListener("DOMContentLoaded", () => {
                 state.generatedBook = {
                     title: finalTitle,
                     subtitle: finalSubtitle,
-                    pages: storyData.pages.map((p, idx) => {
+                    pages: storyData.pages.map((p) => {
                         const basePrompt = `detailed visual illustration, ${p.imagePrompt}`;
-                        const seed = Math.floor(Math.random() * 10000);
-                        const imgUrl = `https://image.pollinations.ai/p/${encodeURIComponent(basePrompt)}?width=800&height=600&nologo=true&seed=${seed}`;
-                        
                         return {
                             chapterTitle: p.chapterTitle,
                             narrative: p.narrative,
                             imagePrompt: basePrompt,
-                            imageSrc: imgUrl,
-                            seed: seed
+                            imageSrc: null,   // filled in by Imagen (lazy, per page)
+                            imageStatus: "pending"
                         };
                     })
                 };
+
+                addLog("Painting chapter illustrations with Imagen…", "info");
+                // Kick off image generation in the background; pages render as they arrive.
+                prefetchChapterImages();
 
                 addLog("Memoir storybook crafted successfully!", "success");
                 showToast("Your virtual picture book is ready!", "success");
@@ -1507,7 +1425,7 @@ document.addEventListener("DOMContentLoaded", () => {
         exportPdfBtn.addEventListener("click", (e) => {
             e.preventDefault();
             stopSpeech();
-            window.print();
+            exportBookAsPdf();
         });
 
         exportHtmlBtn.addEventListener("click", (e) => {
@@ -1587,20 +1505,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
         pageIllustration.classList.add("hidden");
         pageIllustrationSpinner.style.display = "flex";
-        
-        const tempImg = new Image();
-        tempImg.onload = () => {
-            pageIllustration.src = page.imageSrc;
-            pageIllustration.classList.remove("hidden");
-            pageIllustrationSpinner.style.display = "none";
-        };
-        tempImg.onerror = () => {
-            pageIllustration.src = "";
-            pageIllustrationSpinner.style.display = "none";
-            pageIllustration.classList.remove("hidden");
-            showToast("Failed to load illustration. Try repainting.", "error");
-        };
-        tempImg.src = page.imageSrc;
+
+        showPageIllustration(idx);
 
         prevPageBtn.disabled = idx === 0;
         nextPageBtn.disabled = idx === total - 1;
@@ -1608,45 +1514,112 @@ document.addEventListener("DOMContentLoaded", () => {
         bookProgressText.textContent = `Page ${(idx * 2) + 1}-${(idx * 2) + 2} of ${total * 2}`;
     }
 
+    // Displays a page's Imagen illustration, generating it on demand if needed.
+    async function showPageIllustration(idx) {
+        const page = state.generatedBook.pages[idx];
+
+        // Sample book uses bundled static assets.
+        if (page.isSampleAsset) {
+            pageIllustration.src = page.imageSrc;
+            pageIllustration.classList.remove("hidden");
+            pageIllustrationSpinner.style.display = "none";
+            return;
+        }
+
+        // Already have it.
+        if (page.imageSrc && page.imageStatus === "ready") {
+            pageIllustration.src = page.imageSrc;
+            pageIllustration.classList.remove("hidden");
+            pageIllustrationSpinner.style.display = "none";
+            return;
+        }
+
+        // Failed earlier — show fallback art.
+        if (page.imageStatus === "failed") {
+            pageIllustration.src = "assets/story_family.png";
+            pageIllustration.classList.remove("hidden");
+            pageIllustrationSpinner.style.display = "none";
+            return;
+        }
+
+        // Generate now (or wait for the in-flight prefetch).
+        pageIllustration.classList.add("hidden");
+        pageIllustrationSpinner.style.display = "flex";
+        await ensurePageImage(idx);
+
+        // Only update the view if the user is still on this page.
+        if (state.currentPageIndex !== idx) return;
+        if (page.imageStatus === "ready") {
+            pageIllustration.src = page.imageSrc;
+        } else {
+            pageIllustration.src = "assets/story_family.png";
+        }
+        pageIllustration.classList.remove("hidden");
+        pageIllustrationSpinner.style.display = "none";
+    }
+
+    // Generates one page's image via Imagen, with de-duped in-flight promises.
+    function ensurePageImage(idx) {
+        const page = state.generatedBook.pages[idx];
+        if (page.imageStatus === "ready") return Promise.resolve();
+        if (page._imagePromise) return page._imagePromise;
+
+        page.imageStatus = "loading";
+        page._imagePromise = generateChapterImage(page.imagePrompt, { aspectRatio: "4:3" })
+            .then((dataUrl) => {
+                page.imageSrc = dataUrl;
+                page.imageStatus = "ready";
+            })
+            .catch((err) => {
+                console.warn(`Imagen failed for page ${idx + 1}:`, err);
+                page.imageStatus = "failed";
+            })
+            .finally(() => {
+                page._imagePromise = null;
+            });
+        return page._imagePromise;
+    }
+
+    // Generates all chapter images sequentially in the background so they're
+    // ready (or close to it) as the reader pages through the book.
+    async function prefetchChapterImages() {
+        if (!state.generatedBook) return;
+        const pages = state.generatedBook.pages;
+        for (let i = 0; i < pages.length; i++) {
+            if (!state.generatedBook) return; // book reset
+            await ensurePageImage(i);
+            // If the reader is currently looking at this page, refresh it live.
+            if (state.activeStep === 4 && state.currentPageIndex === i) {
+                showPageIllustration(i);
+            }
+        }
+    }
+
     // --- Audio Voice Narration (TTS) ---
+    let isReadingAloud = false;
+
     function toggleReadAloud() {
-        if (window.speechSynthesis && window.speechSynthesis.speaking) {
+        if (isReadingAloud) {
             stopSpeech();
             return;
         }
 
         const page = state.generatedBook.pages[state.currentPageIndex];
-        state.speechUtterance = new SpeechSynthesisUtterance(page.narrative);
-        state.speechUtterance.rate = 0.82; // Warm slower rate
-        state.speechUtterance.pitch = 0.95;
+        isReadingAloud = true;
+        readAloudBtn.innerHTML = `<i class="fa-solid fa-volume-xmark"></i> <span>Stop Narration</span>`;
+        readAloudBtn.classList.add("btn-primary");
+        readAloudBtn.classList.remove("btn-secondary");
 
-        const voices = window.speechSynthesis.getVoices();
-        let chosenVoice = voices.find(v => v.name.includes("Google UK English Male") || v.name.includes("Google US English") || v.name.includes("Samantha"));
-        if (!chosenVoice && voices.length > 0) {
-            chosenVoice = voices[0];
-        }
-        if (chosenVoice) {
-            state.speechUtterance.voice = chosenVoice;
-        }
-
-        state.speechUtterance.onstart = () => {
-            readAloudBtn.innerHTML = `<i class="fa-solid fa-volume-xmark"></i> <span>Stop Narration</span>`;
-            readAloudBtn.classList.add("btn-primary");
-            readAloudBtn.classList.remove("btn-secondary");
-        };
-
-        state.speechUtterance.onend = () => {
-            resetReadAloudButton();
-        };
-
-        state.speechUtterance.onerror = () => {
-            resetReadAloudButton();
-        };
-
-        window.speechSynthesis.speak(state.speechUtterance);
+        // Narrate with the same warm Chirp persona voice chosen for the interview.
+        speakWithChirp(page.narrative, {
+            rate: 0.9,
+            voice: state.interviewerVoice,
+            onEnd: () => resetReadAloudButton()
+        }).then(() => resetReadAloudButton());
     }
 
     function stopSpeech() {
+        stopChirp();
         if (window.speechSynthesis) {
             window.speechSynthesis.cancel();
         }
@@ -1654,6 +1627,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     function resetReadAloudButton() {
+        isReadingAloud = false;
         if (readAloudBtn) {
             readAloudBtn.innerHTML = `<i class="fa-solid fa-volume-high"></i> <span>Read Aloud</span>`;
             readAloudBtn.classList.add("btn-secondary");
@@ -1662,29 +1636,171 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     // --- Regenerate Current Page Image ---
-    function regenerateImageCurrentPage() {
+    async function regenerateImageCurrentPage() {
         const idx = state.currentPageIndex;
         const page = state.generatedBook.pages[idx];
-        
+
         if (page.isSampleAsset) return; // safety check
-        
+
         pageIllustration.classList.add("hidden");
         pageIllustrationSpinner.style.display = "flex";
+        showToast("Repainting this scene…", "info");
 
-        page.seed = Math.floor(Math.random() * 10000);
-        page.imageSrc = `https://image.pollinations.ai/p/${encodeURIComponent(page.imagePrompt)}?width=800&height=600&nologo=true&seed=${page.seed}`;
-        
-        const tempImg = new Image();
-        tempImg.onload = () => {
-            pageIllustration.src = page.imageSrc;
-            pageIllustration.classList.remove("hidden");
+        try {
+            const dataUrl = await generateChapterImage(page.imagePrompt, { aspectRatio: "4:3" });
+            page.imageSrc = dataUrl;
+            page.imageStatus = "ready";
+            if (state.currentPageIndex === idx) {
+                pageIllustration.src = dataUrl;
+                pageIllustration.classList.remove("hidden");
+                pageIllustrationSpinner.style.display = "none";
+            }
+            showToast("Scene repainted with a fresh illustration.", "success");
+        } catch (err) {
+            console.error("Repaint failed:", err);
             pageIllustrationSpinner.style.display = "none";
-            showToast("Scene repainted with new artistic canvas strokes.", "success");
-        };
-        tempImg.src = page.imageSrc;
+            pageIllustration.classList.remove("hidden");
+            showToast("Could not repaint: " + err.message, "error");
+        }
     }
 
     // --- EXPORTS ---
+    // Loads an image URL and returns { dataUrl, w, h }, or null on failure.
+    function loadImageData(url) {
+        return new Promise((resolve) => {
+            const img = new Image();
+            img.crossOrigin = "anonymous";
+            img.onload = () => {
+                try {
+                    const canvas = document.createElement("canvas");
+                    canvas.width = img.naturalWidth || 800;
+                    canvas.height = img.naturalHeight || 600;
+                    const ctx = canvas.getContext("2d");
+                    ctx.drawImage(img, 0, 0);
+                    resolve({ dataUrl: canvas.toDataURL("image/jpeg", 0.92), w: canvas.width, h: canvas.height });
+                } catch (err) {
+                    resolve(null); // tainted canvas / CORS
+                }
+            };
+            img.onerror = () => resolve(null);
+            img.src = url;
+        });
+    }
+
+    async function exportBookAsPdf() {
+        const jsPdfNS = window.jspdf || window.jsPDF;
+        const JsPDF = jsPdfNS ? (jsPdfNS.jsPDF || jsPdfNS) : null;
+        if (!JsPDF) {
+            showToast("PDF library failed to load. Check your connection and retry.", "error");
+            return;
+        }
+        const book = state.generatedBook;
+        if (!book || !book.pages || !book.pages.length) {
+            showToast("No book to export yet.", "error");
+            return;
+        }
+
+        loadingOverlayTitle.textContent = "Binding your book…";
+        loadingOverlaySubtitle.textContent = "Gathering illustrations and laying out pages for PDF.";
+        generationLog.innerHTML = "";
+        loadingOverlay.classList.remove("hidden");
+        addLog("Preparing PDF…", "info");
+
+        try {
+            const doc = new JsPDF({ orientation: "portrait", unit: "pt", format: "a4" });
+            const pageW = doc.internal.pageSize.getWidth();
+            const pageH = doc.internal.pageSize.getHeight();
+            const margin = 48;
+            const contentW = pageW - margin * 2;
+
+            // Title page.
+            doc.setFillColor(252, 250, 245);
+            doc.rect(0, 0, pageW, pageH, "F");
+            doc.setTextColor(84, 57, 44);
+            doc.setFont("times", "bold");
+            doc.setFontSize(30);
+            doc.text(doc.splitTextToSize(book.title || "My Story", contentW), pageW / 2, pageH / 2 - 30, { align: "center" });
+            doc.setFont("times", "italic");
+            doc.setFontSize(15);
+            doc.setTextColor(140, 122, 108);
+            doc.text(doc.splitTextToSize(book.subtitle || "", contentW), pageW / 2, pageH / 2 + 20, { align: "center" });
+
+            for (let i = 0; i < book.pages.length; i++) {
+                const page = book.pages[i];
+                addLog(`Adding chapter ${i + 1} of ${book.pages.length}…`, "info");
+                // Make sure this page's illustration has been generated.
+                if (!page.isSampleAsset && page.imageStatus !== "ready") {
+                    await ensurePageImage(i);
+                }
+                doc.addPage();
+
+                doc.setFillColor(252, 250, 245);
+                doc.rect(0, 0, pageW, pageH, "F");
+
+                let y = margin;
+
+                // Chapter title.
+                doc.setTextColor(84, 57, 44);
+                doc.setFont("times", "bold");
+                doc.setFontSize(20);
+                const titleLines = doc.splitTextToSize(page.chapterTitle || `Chapter ${i + 1}`, contentW);
+                doc.text(titleLines, margin, y + 14);
+                y += titleLines.length * 24 + 14;
+
+                // Illustration.
+                const imgData = await loadImageData(page.imageSrc);
+                if (imgData) {
+                    const ratio = imgData.h / imgData.w;
+                    const drawW = contentW;
+                    const drawH = Math.min(drawW * ratio, pageH * 0.42);
+                    const finalW = drawH / ratio;
+                    const x = margin + (contentW - finalW) / 2;
+                    try {
+                        doc.addImage(imgData.dataUrl, "JPEG", x, y, finalW, drawH);
+                        y += drawH + 22;
+                    } catch (_) { y += 8; }
+                } else {
+                    y += 8;
+                }
+
+                // Narrative.
+                doc.setTextColor(43, 32, 26);
+                doc.setFont("times", "normal");
+                doc.setFontSize(13);
+                const bodyLines = doc.splitTextToSize((page.narrative || "").replace(/\n+/g, "\n\n"), contentW);
+                const lineH = 18;
+                for (const line of bodyLines) {
+                    if (y > pageH - margin) {
+                        doc.addPage();
+                        doc.setFillColor(252, 250, 245);
+                        doc.rect(0, 0, pageW, pageH, "F");
+                        doc.setTextColor(43, 32, 26);
+                        doc.setFont("times", "normal");
+                        doc.setFontSize(13);
+                        y = margin;
+                    }
+                    doc.text(line, margin, y);
+                    y += lineH;
+                }
+
+                // Page number footer.
+                doc.setTextColor(170, 150, 120);
+                doc.setFontSize(10);
+                doc.text(`${i + 1}`, pageW / 2, pageH - 24, { align: "center" });
+            }
+
+            const cleanTitle = (book.title || "memoir").toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
+            doc.save(`${cleanTitle || "memoir"}.pdf`);
+            addLog("PDF ready!", "success");
+            showToast("Your book PDF has been downloaded.", "success");
+        } catch (error) {
+            console.error("PDF export failed:", error);
+            showToast("PDF export failed: " + error.message, "error");
+        } finally {
+            setTimeout(() => loadingOverlay.classList.add("hidden"), 600);
+        }
+    }
+
     function downloadMemoirJson() {
         const bookData = JSON.stringify(state.generatedBook, null, 2);
         const blob = new Blob([bookData], { type: "application/json" });
