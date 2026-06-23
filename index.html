@@ -288,6 +288,22 @@
                             <input type="text" id="elder-name" placeholder="e.g. Manharlal Sheth" required>
                         </div>
 
+                        <div class="form-group">
+                            <label>Your Portrait / Profile Photo <span class="label-hint">(Optional: to guide AI illustration likeness)</span></label>
+                            <div class="photo-upload-zone" id="photo-drop-zone">
+                                <div class="photo-upload-placeholder" id="photo-upload-placeholder">
+                                    <i class="fa-solid fa-camera camera-icon"></i>
+                                    <p>Upload portrait photo</p>
+                                    <span>Drag &amp; drop or click to browse</span>
+                                </div>
+                                <div class="photo-upload-preview hidden" id="photo-upload-preview">
+                                    <img id="photo-preview-image" src="" alt="Reference Portrait">
+                                    <button id="btn-remove-photo" class="btn-remove-photo" type="button" title="Remove Photo">&times;</button>
+                                </div>
+                                <input type="file" id="photo-uploader" accept="image/*" hidden>
+                            </div>
+                        </div>
+
                         <div class="form-row form-row-3">
                             <div class="form-group">
                                 <label for="elder-age">Your Age</label>

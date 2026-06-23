@@ -651,7 +651,7 @@ async function transcribeSpeechBlob({ audioBlob }) {
  * @param {Function} [onLog] Log callback for UI updates
  * @returns {Promise<Object>} Book Outline { title, subtitle, chapters: [{ title, summary }] }
  */
-async function generateBookOutline({ elderName, numPages, tone, artStyle, transcriptText, audioFile }, onLog = () => {}) {
+async function generateBookOutline({ elderName, numPages, tone, artStyle, transcriptText, audioFile, userReferencePicture }, onLog = () => {}) {
     let apiKey = getApiKey();
     if (!apiKey) {
         await loadApiKeyFromEnv();
@@ -664,6 +664,8 @@ async function generateBookOutline({ elderName, numPages, tone, artStyle, transc
     onLog("Preparing contents for Gemini...");
     
     let contents = [];
+    let parts = [];
+    
     let promptText = `
 You are a warm, sensitive memoir writer and professional biographer.
 Your task is to analyze the life-story conversation of the narrator, "${elderName}", and outline a beautiful keepsake memoir picture book.
@@ -698,25 +700,29 @@ Produce structured JSON matching this schema:
 }
 `;
 
+    if (userReferencePicture) {
+        promptText += `\n\nAn uploaded reference portrait photo of the narrator "${elderName}" is provided. Keep their age, physical features, hair, and style from the photo in mind when designing the visual focus and themes of the chapters.`;
+        parts.push({
+            inlineData: {
+                mimeType: userReferencePicture.mimeType,
+                data: userReferencePicture.data
+            }
+        });
+    }
+
     // Process media vs transcript text
     if (audioFile) {
         onLog(`Converting media file (${(audioFile.size / (1024 * 1024)).toFixed(2)} MB) to base64...`);
         const mediaPart = await fileToGenerativePart(audioFile);
         onLog("Media file processed. Sending audio and analysis prompt to Gemini (this may take 15-40 seconds to process audio narration)...");
-        contents.push({
-            parts: [
-                mediaPart,
-                { text: `${promptText}\n\nAnalyze the uploaded interview media above to extract the stories.` }
-            ]
-        });
+        parts.push(mediaPart);
+        parts.push({ text: `${promptText}\n\nAnalyze the uploaded interview media above to extract the stories.` });
     } else {
         onLog("Sending transcript text and prompt to Gemini...");
-        contents.push({
-            parts: [
-                { text: `${promptText}\n\nHere is the raw interview transcript/notes:\n"""\n${transcriptText}\n"""` }
-            ]
-        });
+        parts.push({ text: `${promptText}\n\nHere is the raw interview transcript/notes:\n"""\n${transcriptText}\n"""` });
     }
+
+    contents.push({ parts });
 
     const payload = {
         contents: contents,
@@ -774,7 +780,7 @@ Produce structured JSON matching this schema:
  * @param {Function} [onLog] Log callback for UI updates
  * @returns {Promise<Object>} Full book details { pages: [{ chapterTitle, narrative, imagePrompt }] }
  */
-async function generateFullBook({ bookTitle, bookSubtitle, elderName, tone, artStyle, transcriptText, audioFile, chaptersEdited }, onLog = () => {}) {
+async function generateFullBook({ bookTitle, bookSubtitle, elderName, tone, artStyle, transcriptText, audioFile, chaptersEdited, userReferencePicture }, onLog = () => {}) {
     let apiKey = getApiKey();
     if (!apiKey) {
         await loadApiKeyFromEnv();
@@ -787,6 +793,8 @@ async function generateFullBook({ bookTitle, bookSubtitle, elderName, tone, artS
     onLog("Formulating final story script write-up...");
 
     let contents = [];
+    let parts = [];
+    
     let promptText = `
 You are a master storyteller, writing a nostalgic virtual memoir picture book titled "${bookTitle}" (${bookSubtitle}), based on the life of "${elderName}".
 Tone of voice: ${tone}
@@ -803,6 +811,27 @@ For each chapter listed in the outline, your task is to write:
    - You MUST incorporate the aesthetic: "${artStyle}".
    - Keep the visual style consistent across pages (e.g. "In the style of a soft vintage watercolor...").
    - DO NOT use abstract words (like "represents hope"). Describe concrete visual elements instead (e.g., "warm golden sunbeams shining through dusty windowpanes, lighting up an old wooden workbench").
+`;
+
+    if (userReferencePicture) {
+        promptText += `
+        
+=== IMPORTANT: REFERENCE PHOTO INSTRUCTIONS ===
+An uploaded reference portrait photo of the narrator "${elderName}" has been provided. 
+1. Look closely at the person in the photo (their hair style, hair color, facial features, age, body type, expression, and any accessories like spectacles/glasses).
+2. In EVERY chapter's "imagePrompt" where "${elderName}" is depicted, you MUST describe them using the exact physical characteristics identified in this photo (e.g., "a gentleman with a friendly oval face, short wispy white hair, wearing round thin wire-frame glasses and a cozy navy blue sweater").
+3. Do NOT mention the photo directly in the prompt (e.g., do not say "matching the reference photo"). Instead, describe their actual physical features directly in the scene.
+4. Keep these visual characteristics consistent across all chapters so the character maintains a highly stable and recognizable appearance matching the actual person.
+`;
+        parts.push({
+            inlineData: {
+                mimeType: userReferencePicture.mimeType,
+                data: userReferencePicture.data
+            }
+        });
+    }
+
+    promptText += `
 
 Produce structured JSON matching this schema:
 {
@@ -819,19 +848,13 @@ Produce structured JSON matching this schema:
     if (audioFile) {
         onLog("Re-loading audio file context for narrative generation...");
         const mediaPart = await fileToGenerativePart(audioFile);
-        contents.push({
-            parts: [
-                mediaPart,
-                { text: `${promptText}\n\nReference the uploaded interview media above for specific dialogue, dates, or feelings to include.` }
-            ]
-        });
+        parts.push(mediaPart);
+        parts.push({ text: `${promptText}\n\nReference the uploaded interview media above for specific dialogue, dates, or feelings to include.` });
     } else {
-        contents.push({
-            parts: [
-                { text: `${promptText}\n\nReference the raw transcript/notes below for details:\n"""\n${transcriptText}\n"""` }
-            ]
-        });
+        parts.push({ text: `${promptText}\n\nReference the raw transcript/notes below for details:\n"""\n${transcriptText}\n"""` });
     }
+
+    contents.push({ parts });
 
     const payload = {
         contents: contents,

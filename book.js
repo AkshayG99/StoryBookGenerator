@@ -105,6 +105,15 @@ document.addEventListener("DOMContentLoaded", () => {
     const selectedFileInfo = document.getElementById("selected-file-info");
     const fileNameSpan = document.getElementById("file-name");
     const removeFileBtn = document.getElementById("btn-remove-file");
+
+    // Photo Uploader DOM elements
+    const photoUploader = document.getElementById("photo-uploader");
+    const photoDropZone = document.getElementById("photo-drop-zone");
+    const photoUploadPlaceholder = document.getElementById("photo-upload-placeholder");
+    const photoUploadPreview = document.getElementById("photo-upload-preview");
+    const photoPreviewImage = document.getElementById("photo-preview-image");
+    const removePhotoBtn = document.getElementById("btn-remove-photo");
+
     const recordBtn = document.getElementById("btn-record");
     const dictationStatus = document.getElementById("dictation-status");
     const dictationPreview = document.getElementById("dictation-preview");
@@ -1085,7 +1094,8 @@ document.addEventListener("DOMContentLoaded", () => {
                 tone: state.narrationTone,
                 artStyle: state.artStyle,
                 transcriptText: state.transcriptText,
-                audioFile: state.sourceTab === "upload" ? state.audioFile : null
+                audioFile: state.sourceTab === "upload" ? state.audioFile : null,
+                userReferencePicture: state.userReferencePicture
             }, (msg) => addLog(msg, "info"));
 
             state.bookOutline = outline;
@@ -1120,6 +1130,55 @@ document.addEventListener("DOMContentLoaded", () => {
         selectedFileInfo.classList.remove("hidden");
         dropZone.classList.add("hidden");
         showToast("Audio file attached successfully.", "success");
+    }
+
+    function processPortraitPhoto(file) {
+        if (!file.type.startsWith("image/")) {
+            showToast("Please upload an image file.", "error");
+            return;
+        }
+        
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const img = new Image();
+            img.onload = () => {
+                const maxDim = 512;
+                let width = img.width;
+                let height = img.height;
+                if (width > maxDim || height > maxDim) {
+                    if (width > height) {
+                        height = Math.round((height * maxDim) / width);
+                        width = maxDim;
+                    } else {
+                        width = Math.round((width * maxDim) / height);
+                        height = maxDim;
+                    }
+                }
+                
+                const canvas = document.createElement("canvas");
+                canvas.width = width;
+                canvas.height = height;
+                const ctx = canvas.getContext("2d");
+                ctx.drawImage(img, 0, 0, width, height);
+                
+                const fullDataUrl = canvas.toDataURL("image/jpeg", 0.85);
+                const base64Data = fullDataUrl.split(",")[1];
+                
+                state.userReferencePicture = {
+                    mimeType: "image/jpeg",
+                    data: base64Data,
+                    dataUrl: fullDataUrl
+                };
+                
+                photoPreviewImage.src = fullDataUrl;
+                photoUploadPlaceholder.classList.add("hidden");
+                photoUploadPreview.classList.remove("hidden");
+                if (photoDropZone) photoDropZone.classList.add("has-photo");
+                showToast("Portrait photo added successfully.", "success");
+            };
+            img.src = e.target.result;
+        };
+        reader.readAsDataURL(file);
     }
 
     // --- Event Listeners Setup ---
@@ -1297,6 +1356,47 @@ document.addEventListener("DOMContentLoaded", () => {
             fileUploader.value = "";
             showToast("File attachment removed.", "info");
         });
+
+        // Photo Uploader Event Listeners
+        if (photoDropZone && photoUploader) {
+            photoDropZone.addEventListener("click", () => photoUploader.click());
+            photoUploader.addEventListener("change", (e) => {
+                const file = e.target.files && e.target.files[0];
+                if (file) {
+                    processPortraitPhoto(file);
+                }
+            });
+
+            photoDropZone.addEventListener("dragover", (e) => {
+                e.preventDefault();
+                photoDropZone.classList.add("dragover");
+            });
+
+            photoDropZone.addEventListener("dragleave", () => {
+                photoDropZone.classList.remove("dragover");
+            });
+
+            photoDropZone.addEventListener("drop", (e) => {
+                e.preventDefault();
+                photoDropZone.classList.remove("dragover");
+                const file = e.dataTransfer.files && e.dataTransfer.files[0];
+                if (file) {
+                    processPortraitPhoto(file);
+                }
+            });
+        }
+
+        if (removePhotoBtn) {
+            removePhotoBtn.addEventListener("click", (e) => {
+                e.stopPropagation();
+                state.userReferencePicture = null;
+                photoUploadPreview.classList.add("hidden");
+                photoUploadPlaceholder.classList.remove("hidden");
+                if (photoDropZone) photoDropZone.classList.remove("has-photo");
+                photoUploader.value = "";
+                showToast("Portrait photo removed.", "info");
+            });
+        }
 
         if (recordBtn) {
             recordBtn.addEventListener("click", () => {
@@ -1548,7 +1648,8 @@ document.addEventListener("DOMContentLoaded", () => {
                     artStyle: state.artStyle,
                     transcriptText: state.transcriptText,
                     audioFile: (state.sourceTab === "upload" ? state.audioFile : null),
-                    chaptersEdited: chaptersEdited
+                    chaptersEdited: chaptersEdited,
+                    userReferencePicture: state.userReferencePicture
                 }, (msg) => addLog(msg, "info"));
 
                 state.generatedBook = {

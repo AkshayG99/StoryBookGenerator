@@ -1083,6 +1083,113 @@ body.theme-dark .tab-btn.active {
     margin-top: 2px;
 }
 
+/* Photo Upload Zone Styles */
+.photo-upload-zone {
+    border: 1px dashed var(--border-card);
+    border-radius: var(--radius-sm);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 1.5rem;
+    text-align: center;
+    transition: var(--transition-smooth);
+    cursor: pointer;
+    background: rgba(0, 0, 0, 0.01);
+    position: relative;
+    min-height: 120px;
+}
+
+.photo-upload-zone:hover {
+    background: rgba(0, 0, 0, 0.02);
+    border-color: var(--color-gold);
+}
+
+.photo-upload-zone.has-photo {
+    border-style: solid;
+    border-color: var(--color-gold);
+    background: var(--color-gold-light);
+}
+
+.photo-upload-placeholder {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.4rem;
+}
+
+.photo-upload-placeholder.hidden {
+    display: none !important;
+}
+
+.photo-upload-placeholder p {
+    font-weight: 600;
+    font-size: 0.85rem;
+    margin: 0;
+}
+
+.photo-upload-placeholder span {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+}
+
+.camera-icon {
+    font-size: 1.6rem;
+    color: var(--text-muted);
+    transition: var(--transition-smooth);
+    margin-bottom: 0.2rem;
+}
+
+.photo-upload-zone:hover .camera-icon {
+    color: var(--color-gold);
+}
+
+.photo-upload-preview {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    width: 90px;
+    height: 90px;
+}
+
+.photo-upload-preview.hidden {
+    display: none !important;
+}
+
+.photo-upload-preview img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: 50%;
+    border: 2px solid var(--color-gold);
+    box-shadow: 0 4px 12px var(--shadow-color);
+}
+
+.btn-remove-photo {
+    position: absolute;
+    top: -2px;
+    right: -2px;
+    background: var(--color-error);
+    color: white;
+    border: none;
+    border-radius: 50%;
+    width: 22px;
+    height: 22px;
+    font-size: 0.8rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.25);
+    transition: var(--transition-smooth);
+}
+
+.btn-remove-photo:hover {
+    transform: scale(1.15);
+    background: #ff3b30;
+}
+
 /* Live Dictation Styles */
 .dictation-zone {
     display: flex;
