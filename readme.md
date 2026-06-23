@@ -52,9 +52,23 @@ Running through a local web server is highly recommended to enable browser micro
 3. **Open in browser**:
    Navigate to `http://localhost:8000` (or the port specified by the server).
 
+### Optional: Configure Gemini key with `.env`
+You can provide your Gemini key through a local `.env` file so the app can auto-load it.
+
+1. Copy `.env.example` to `.env`
+2. Set one of the supported variable names:
+
+```dotenv
+GEMINI_API_KEY=AIzaSy...
+```
+
+Notes:
+- A key saved from the Settings modal (stored in browser localStorage) takes precedence over `.env`.
+- `.env` is added to `.gitignore` and should never be committed.
+
 ### Option B: Double-click to Open
 If you do not need live dictation (microphone permissions), you can run it instantly:
-1. Double-click [index.html](file:///Users/akshaygupta/Documents/GitHub/StoryBookGenerator/index.html) to launch it in any modern web browser (Chrome, Safari, Edge, Firefox).
+1. Double-click `index.html` to launch it in any modern web browser (Chrome, Safari, Edge, Firefox).
 
 ---
 
