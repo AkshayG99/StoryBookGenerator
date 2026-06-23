@@ -83,6 +83,39 @@
             </div>
         </div>
 
+        <!-- Camera Modal -->
+        <div id="modal-camera" class="modal hidden">
+            <div class="modal-content glass-card">
+                <div class="modal-header">
+                    <h2><i class="fa-solid fa-camera gold-icon"></i> Take Portrait Photo</h2>
+                    <button id="btn-close-camera" class="btn-icon-close" title="Close Camera">&times;</button>
+                </div>
+                <div class="modal-body text-center">
+                    <p class="settings-note">Position yourself in the center of the frame and click capture.</p>
+                    <div class="camera-stream-container">
+                        <video id="camera-stream" autoplay playsinline class="camera-video-feed"></video>
+                        <canvas id="camera-snapshot-canvas" style="display: none;"></canvas>
+                        
+                        <!-- Camera error message -->
+                        <div id="camera-error" class="camera-error-message hidden">
+                            <i class="fa-solid fa-circle-exclamation error-icon"></i>
+                            <p id="camera-error-text">Could not access the camera. Please check permissions.</p>
+                        </div>
+                        
+                        <!-- Camera Loader -->
+                        <div id="camera-loader" class="camera-loader">
+                            <div class="spinner-ring"></div>
+                            <span>Requesting camera access...</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button id="btn-camera-capture" class="btn btn-primary" disabled><i class="fa-solid fa-camera"></i> Capture</button>
+                    <button id="btn-camera-cancel" class="btn btn-secondary">Cancel</button>
+                </div>
+            </div>
+        </div>
+
         <!-- PANEL A: LANDING PAGE -->
         <section id="panel-landing" class="landing-panel active">
             <!-- Hero Section -->
@@ -108,16 +141,17 @@
                                     <!-- Left Page (Illustration) -->
                                     <div class="book-page left-page">
                                         <div class="page-content illustration-container">
-                                            <img src="assets/story_childhood.png" alt="Chapter 1 Illustration" class="illustration-image">
+                                            <img src="assets/sunita_1.png" alt="Chapter 1 Illustration" class="illustration-image">
                                         </div>
                                         <div class="page-number-left">1</div>
                                     </div>
                                     <!-- Right Page (Text) -->
                                     <div class="book-page right-page">
                                         <div class="page-content narrative-container">
-                                            <h3 class="page-title">Chapter 1: The Whispers of Youth</h3>
+                                            <h3 class="page-title">Chapter 1: The Whispering Woods and Mama's Special Roti</h3>
                                             <div class="page-narrative">
-                                                <p>Back in 1948, the world felt much bigger and slower. In the backyard of our small farmhouse stood a giant old oak tree. I would spend hours underneath its branches, building little wooden boats out of twigs and leaves, launching them into imaginary streams. It was my private kingdom, where the leaves whispered stories of the places I would one day see and the adventures that lay ahead.</p>
+                                                <p>From the very first flutter of my heart, I was a girl who loved her freedom, a tiny explorer always off on a secret adventure. My parents, wonder where their little Sunita had vanished to, but I was simply charting my own course, always a little too independent to be easily swayed. My deepest inspiration was my dear Papa. He worked tirelessly, his hands always busy, fixing anything and everything around our home. Watching him, I learned that true strength came from self-reliance and the quiet joy of building with your own two hands.</p>
+                                                <p>But even an independent spirit needs to feel cherished, and my Mama knew just how to make me feel uniquely special. She would always make big, round rotis for the whole family, but just for me, my last roti, she would roll it into a small, perfect square. That tiny, warm square, made just for me, was a quiet whisper of her boundless love, a secret understanding between us that I carried in my heart always.</p>
                                             </div>
                                         </div>
                                         <div class="page-number-right">2</div>
@@ -129,16 +163,17 @@
                                     <!-- Left Page (Illustration) -->
                                     <div class="book-page left-page">
                                         <div class="page-content illustration-container">
-                                            <img src="assets/story_adventure.png" alt="Chapter 2 Illustration" class="illustration-image">
+                                            <img src="assets/sunita_2.png" alt="Chapter 2 Illustration" class="illustration-image">
                                         </div>
                                         <div class="page-number-left">3</div>
                                     </div>
                                     <!-- Right Page (Text) -->
                                     <div class="book-page right-page">
                                         <div class="page-content narrative-container">
-                                            <h3 class="page-title">Chapter 2: The Journey to New Horizons</h3>
+                                            <h3 class="page-title">Chapter 2: The Courts of Courage: My Captain's Heartbeat</h3>
                                             <div class="page-narrative">
-                                                <p>When I turned eighteen, I took my first job on the transcontinental railway. I still remember the raw power of the steam engine as it chugged through the green valleys and mountain passes. Looking out the window, watching the landscape shift and change, I realized that life itself is a journey, and every whistle blow was a promise of a new adventure.</p>
+                                                <p>As I grew, that independent spirit found a new playground: the bustling basketball court. There, amidst the squeak of sneakers and the rhythmic thump of the ball, I learned the thrill of competition and the warmth of camaraderie. By grade six, I proudly earned the title of team captain, a role that filled me with immense joy, though the weight of leadership felt heavy at first. Every loss seemed to rest squarely on my young shoulders.</p>
+                                                <p>But slowly, with the unwavering support of my teammates, I learned a precious truth: it wasn't just about winning, but about the courage to try our very best, to lift each other up, and to learn from every stumble. I discovered the quiet satisfaction of watching my friends grow their skills, inspired by our collective effort. That captaincy taught me that even when the scoreboard doesn't favor you, finding your strength, encouraging others, and pouring your heart into the game is a victory all its own.</p>
                                             </div>
                                         </div>
                                         <div class="page-number-right">4</div>
@@ -150,19 +185,86 @@
                                     <!-- Left Page (Illustration) -->
                                     <div class="book-page left-page">
                                         <div class="page-content illustration-container">
-                                            <img src="assets/story_family.png" alt="Chapter 3 Illustration" class="illustration-image">
+                                            <img src="assets/sunita_3.png" alt="Chapter 3 Illustration" class="illustration-image">
                                         </div>
                                         <div class="page-number-left">5</div>
                                     </div>
                                     <!-- Right Page (Text) -->
                                     <div class="book-page right-page">
                                         <div class="page-content narrative-container">
-                                            <h3 class="page-title">Chapter 3: The Golden Years of Comfort</h3>
+                                            <h3 class="page-title">Chapter 3: The Logic of Dreams: IIT</h3>
                                             <div class="page-narrative">
-                                                <p>Now, many years later, my favorite place is here by the warm, crackling fireplace, sitting in rocking chairs with my beloved Sarah. The room is filled with the scent of hot tea and the quiet ticking of the grandfather clock. As I watch the embers glow, I look back on all the paths I took, knowing that the greatest adventure of all was the family we built together.</p>
+                                                <p>The lessons from the basketball court – that gentle wisdom of resilience and cooperation – became my compass as I navigated high school and eventually set my sights on IIT. Unlike some, I understood that true success wasn't a solitary climb, but a shared journey, where helping others also enriched my own path. I leaned into collaboration, valuing the exchange of ideas as much as the individual triumph, a philosophy that truly blossomed when I discovered software engineering.</p>
+                                                <p>It was a field that hummed with the same problem-solving spirit I so admired in my father. Here, I could build, create, and impact others on a grander scale, just as I had aimed to do as a team captain. Even when faced with the sting of failure, like that challenging Python course, I remembered my court-side mantra: it’s always better to try, to learn, to grow. IIT was a dazzling world of brilliant minds, and amidst the hum of computers and the sparkle of new ideas, I knew I had found my calling.</p>
                                             </div>
                                         </div>
                                         <div class="page-number-right">6</div>
+                                    </div>
+                                </div>
+
+                                <!-- Spread 4 -->
+                                <div class="sample-spread">
+                                    <!-- Left Page (Illustration) -->
+                                    <div class="book-page left-page">
+                                        <div class="page-content illustration-container">
+                                            <img src="assets/sunita_4.png" alt="Chapter 4 Illustration" class="illustration-image">
+                                        </div>
+                                        <div class="page-number-left">7</div>
+                                    </div>
+                                    <!-- Right Page (Text) -->
+                                    <div class="book-page right-page">
+                                        <div class="page-content narrative-container">
+                                            <h3 class="page-title">Chapter 4: Paws and Pixels: A Twinkling Resilience</h3>
+                                            <div class="page-narrative">
+                                                <p>Inspired by the brilliant minds around me at IIT, I dared to dream a whimsical dream: a video chat network for lonely pets. Oh, how I imagined furry friends connecting, sharing barks and purrs across digital landscapes, just like in the movies! It was a passion project, born from a desire to connect and bring joy, but not everyone shared my vision. There were whispers of doubt, and eventually, the venture had to close its doors.</p>
+                                                <p>It was a challenging moment, the sting of disappointment sharp and real. Yet, in that quiet time, a familiar melody, 'Twinkle, Twinkle Little Star,' drifted into my heart. It was a lullaby from my baby days, a simple tune that brought a wave of comfort and memory. The song reminded me that even when dreams fade, the act of trying, of putting your whole heart into something, is a beautiful and worthy endeavor in itself.</p>
+                                            </div>
+                                        </div>
+                                        <div class="page-number-right">8</div>
+                                    </div>
+                                </div>
+
+                                <!-- Spread 5 -->
+                                <div class="sample-spread">
+                                    <!-- Left Page (Illustration) -->
+                                    <div class="book-page left-page">
+                                        <div class="page-content illustration-container">
+                                            <img src="assets/sunita_5.png" alt="Chapter 5 Illustration" class="illustration-image">
+                                        </div>
+                                        <div class="page-number-left">9</div>
+                                    </div>
+                                    <!-- Right Page (Text) -->
+                                    <div class="book-page right-page">
+                                        <div class="page-content narrative-container">
+                                            <h3 class="page-title">Chapter 5: The Unlikely Strike: A Love Story</h3>
+                                            <div class="page-narrative">
+                                                <p>Life, as it often does, held a beautiful surprise for me when I was twenty-three. My path crossed with the love of my life in the most wonderfully unexpected way. I remember seeing her studying, and in a moment of youthful impulsivity, I slammed her books down, demanding to know why she was always so engrossed! She didn't shout; she simply looked up, her intelligent eyes wide with perplexity, and that completely disarmed me.</p>
+                                                <p>But I couldn't forget her. Coffee led to conversations, and those conversations led to a bowling alley, where she, with her incredible focus, bowled a perfect game. My heart, it bowled a perfect game right along with her! Seven days into dating, I spontaneously proposed. She said yes, and our grand Indian wedding, filled with laughter and sweet moments, sealed our love. We built a beautiful family, adopting two bright children who filled our home with joy and intellect.</p>
+                                            </div>
+                                        </div>
+                                        <div class="page-number-right">10</div>
+                                    </div>
+                                </div>
+
+                                <!-- Spread 6 -->
+                                <div class="sample-spread">
+                                    <!-- Left Page (Illustration) -->
+                                    <div class="book-page left-page">
+                                        <div class="page-content illustration-container">
+                                            <img src="assets/sunita_6.png" alt="Chapter 6 Illustration" class="illustration-image">
+                                        </div>
+                                        <div class="page-number-left">11</div>
+                                    </div>
+                                    <!-- Right Page (Text) -->
+                                    <div class="book-page right-page">
+                                        <div class="page-content narrative-container">
+                                            <h3 class="page-title">Chapter 6: The Sacred Hearth: A Legacy for Our Children's Children</h3>
+                                            <div class="page-narrative">
+                                                <p>After a lifetime of building and problem-solving, as I eased into my later years, my heart yearned to build one last, profound legacy. Having come to Canada as a young immigrant, I deeply understood the unique journey of blending cultures. I knew, too, that my children and future generations deserved to carry forward the rich tapestry of our Jain heritage, the culture that had so beautifully shaped who I was. And so, I poured my energy into establishing a Jain temple here in Canada.</p>
+                                                <p>It became a sacred space, a vibrant community hub, a bridge between worlds. This temple, built not just with bricks and mortar, but with hope and heritage, ensures that the spiritual and cultural roots of our family will remain strong, nurturing the hearts and minds of our children's children for generations to come.</p>
+                                            </div>
+                                        </div>
+                                        <div class="page-number-right">12</div>
                                     </div>
                                 </div>
                                 
@@ -171,14 +273,14 @@
 
                         <!-- Navigation below book -->
                         <div class="sample-book-nav-header">
-                            <span class="sample-book-badge"><i class="fa-solid fa-book-open"></i> The Whispering Oak (Sample)</span>
+                            <span class="sample-book-badge"><i class="fa-solid fa-book-open"></i> Sunita's Twinkling Path (Sample)</span>
                             <div class="sample-book-nav">
                                 <button id="btn-sample-prev" class="btn-sample-nav" disabled aria-label="Previous Page">
                                     <i class="fa-solid fa-chevron-left"></i>
                                 </button>
                                 <div class="sample-page-slider-container">
-                                    <input type="range" id="sample-progress-range" min="0" max="2" value="0" step="1">
-                                    <span id="sample-page-indicator">Pages 1-2 of 6</span>
+                                    <input type="range" id="sample-progress-range" min="0" max="5" value="0" step="1">
+                                    <span id="sample-page-indicator">Pages 1-2 of 12</span>
                                 </div>
                                 <button id="btn-sample-next" class="btn-sample-nav" aria-label="Next Page">
                                     <i class="fa-solid fa-chevron-right"></i>
@@ -300,18 +402,28 @@
                         </div>
 
                         <div class="form-group">
-                            <label>Your Portrait / Profile Photo <span class="label-hint">(Optional: to guide AI illustration likeness)</span></label>
-                            <div class="photo-upload-zone" id="photo-drop-zone">
-                                <div class="photo-upload-placeholder" id="photo-upload-placeholder">
-                                    <i class="fa-solid fa-camera camera-icon"></i>
-                                    <p>Upload portrait photo</p>
-                                    <span>Drag &amp; drop or click to browse</span>
+                            <label>Profile Photo <span class="label-hint">(Optional: to guide illustrations)</span></label>
+                            <div class="photo-input-container" id="photo-input-container">
+                                <div class="photo-upload-zone" id="photo-drop-zone">
+                                    <div class="photo-upload-placeholder" id="photo-upload-placeholder">
+                                        <i class="fa-solid fa-cloud-arrow-up camera-icon"></i>
+                                        <p>Upload portrait photo</p>
+                                        <span>Drag &amp; drop or click to browse</span>
+                                    </div>
+                                    <div class="photo-upload-preview hidden" id="photo-upload-preview">
+                                        <img id="photo-preview-image" src="" alt="Reference Portrait">
+                                        <button id="btn-remove-photo" class="btn-remove-photo" type="button" title="Remove Photo">&times;</button>
+                                    </div>
+                                    <input type="file" id="photo-uploader" accept="image/*" hidden>
                                 </div>
-                                <div class="photo-upload-preview hidden" id="photo-upload-preview">
-                                    <img id="photo-preview-image" src="" alt="Reference Portrait">
-                                    <button id="btn-remove-photo" class="btn-remove-photo" type="button" title="Remove Photo">&times;</button>
+                                
+                                <div class="photo-camera-zone" id="photo-camera-zone">
+                                    <div class="photo-camera-placeholder" id="photo-camera-placeholder">
+                                        <i class="fa-solid fa-camera camera-icon"></i>
+                                        <p>Take photo directly</p>
+                                        <span>Use your device webcam</span>
+                                    </div>
                                 </div>
-                                <input type="file" id="photo-uploader" accept="image/*" hidden>
                             </div>
                         </div>
 
@@ -322,12 +434,21 @@
                             </div>
                             <div class="form-group">
                                 <label for="elder-gender">Your Gender</label>
-                                <input type="text" id="elder-gender" placeholder="e.g. Man">
+                                <select id="elder-gender">
+                                    <option value="Man">Man</option>
+                                    <option value="Woman">Woman</option>
+                                    <option value="Specify">Other</option>
+                                </select>
                             </div>
                             <div class="form-group">
                                 <label for="elder-ethnicity">Your Ethnicity / Cultural Background</label>
                                 <input type="text" id="elder-ethnicity" placeholder="e.g. Gujarati Jain Indian">
                             </div>
+                        </div>
+
+                        <div class="form-group hidden" id="gender-specify-container">
+                            <label for="elder-gender-custom">Specify Gender</label>
+                            <input type="text" id="elder-gender-custom" placeholder="e.g. Non-binary, agender">
                         </div>
 
                         <div class="form-row">

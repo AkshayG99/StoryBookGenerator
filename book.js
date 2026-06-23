@@ -90,6 +90,8 @@ document.addEventListener("DOMContentLoaded", () => {
     const elderNameInput = document.getElementById("elder-name");
     const elderAgeInput = document.getElementById("elder-age");
     const elderGenderInput = document.getElementById("elder-gender");
+    const elderGenderCustomInput = document.getElementById("elder-gender-custom");
+    const genderSpecifyContainer = document.getElementById("gender-specify-container");
     const elderEthnicityInput = document.getElementById("elder-ethnicity");
     const artStyleSelect = document.getElementById("illustration-style");
     const bookLengthSelect = document.getElementById("book-length");
@@ -106,13 +108,24 @@ document.addEventListener("DOMContentLoaded", () => {
     const fileNameSpan = document.getElementById("file-name");
     const removeFileBtn = document.getElementById("btn-remove-file");
 
-    // Photo Uploader DOM elements
+    // Photo Uploader & Camera DOM elements
+    const photoInputContainer = document.getElementById("photo-input-container");
     const photoUploader = document.getElementById("photo-uploader");
     const photoDropZone = document.getElementById("photo-drop-zone");
     const photoUploadPlaceholder = document.getElementById("photo-upload-placeholder");
     const photoUploadPreview = document.getElementById("photo-upload-preview");
     const photoPreviewImage = document.getElementById("photo-preview-image");
     const removePhotoBtn = document.getElementById("btn-remove-photo");
+    const photoCameraZone = document.getElementById("photo-camera-zone");
+    const modalCamera = document.getElementById("modal-camera");
+    const btnCloseCamera = document.getElementById("btn-close-camera");
+    const cameraStream = document.getElementById("camera-stream");
+    const cameraSnapshotCanvas = document.getElementById("camera-snapshot-canvas");
+    const cameraError = document.getElementById("camera-error");
+    const cameraErrorText = document.getElementById("camera-error-text");
+    const cameraLoader = document.getElementById("camera-loader");
+    const btnCameraCapture = document.getElementById("btn-camera-capture");
+    const btnCameraCancel = document.getElementById("btn-camera-cancel");
 
     const recordBtn = document.getElementById("btn-record");
     const dictationStatus = document.getElementById("dictation-status");
@@ -560,30 +573,50 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
 
-    // --- Sample Book Data ---
     const sampleBookData = {
-        title: "The Whispering Oak",
-        subtitle: "A Collection of Life Stories for My Family",
+        title: "Sunita's Twinkling Path",
+        subtitle: "For the independent spirits, the resilient hearts, and the bright futures they build.",
         pages: [
             {
-                chapterTitle: "Chapter 1: The Whispers of Youth",
-                narrative: "Back in 1948, the world felt much bigger and slower. In the backyard of our small farmhouse stood a giant old oak tree. I would spend hours underneath its branches, building little wooden boats out of twigs and leaves, launching them into imaginary streams. It was my private kingdom, where the leaves whispered stories of the places I would one day see and the adventures that lay ahead.",
-                imagePrompt: "watercolor painting of young boy playing by oak tree",
-                imageSrc: "assets/story_childhood.png",
+                chapterTitle: "Chapter 1: The Whispering Woods and Mama's Special Roti",
+                narrative: "From the very first flutter of my heart, I was a girl who loved her freedom, a tiny explorer always off on a secret adventure. My parents, bless their hearts, would often wonder where their little Sunita had vanished to, but I was simply charting my own course, always a little too independent to be easily swayed. My deepest inspiration, you see, was my dear Papa. He worked tirelessly, his hands always busy, fixing anything and everything around our home. Watching him, I learned that true strength came from self-reliance and the quiet joy of building with your own two hands.\nBut even an independent spirit needs to feel cherished, and my Mama knew just how to make me feel uniquely special. She would always make big, round rotis for the whole family, but just for me, my last roti, she would roll it into a small, perfect square. That tiny, warm square, made just for me, was a quiet whisper of her boundless love, a secret understanding between us that I carried in my heart always.",
+                imagePrompt: "watercolor painting of young Sunita holding square roti",
+                imageSrc: "assets/sunita_1.png",
                 isSampleAsset: true
             },
             {
-                chapterTitle: "Chapter 2: The Journey to New Horizons",
-                narrative: "When I turned eighteen, I took my first job on the transcontinental railway. I still remember the raw power of the steam engine as it chugged through the green valleys and mountain passes. Looking out the window, watching the landscape shift and change, I realized that life itself is a journey, and every whistle blow was a promise of a new adventure.",
-                imagePrompt: "oil painting of steam train traveling through valleys",
-                imageSrc: "assets/story_adventure.png",
+                chapterTitle: "Chapter 2: The Courts of Courage: My Captain's Heartbeat",
+                narrative: "As I grew, that independent spirit found a new playground: the bustling basketball court. There, amidst the squeak of sneakers and the rhythmic thump of the ball, I learned the thrill of competition and the warmth of camaraderie. By grade six, I proudly earned the title of team captain, a role that filled me with immense joy, though the weight of leadership felt heavy at first. Every loss seemed to rest squarely on my young shoulders.\nBut slowly, with the unwavering support of my teammates, I learned a precious truth: it wasn't just about winning, but about the courage to try our very best, to lift each other up, and to learn from every stumble. I discovered the quiet satisfaction of watching my friends grow their skills, inspired by our collective effort. That captaincy taught me that even when the scoreboard doesn't favor you, finding your strength, encouraging others, and pouring your heart into the game is a victory all its own. It was a lesson I would carry with me, long after the final buzzer sounded.",
+                imagePrompt: "watercolor painting of Sunita playing basketball",
+                imageSrc: "assets/sunita_2.png",
                 isSampleAsset: true
             },
             {
-                chapterTitle: "Chapter 3: The Golden Years of Comfort",
-                narrative: "Now, many years later, my favorite place is here by the warm, crackling fireplace, sitting in rocking chairs with my beloved Sarah. The room is filled with the scent of hot tea and the quiet ticking of the grandfather clock. As I watch the embers glow, I look back on all the paths I took, knowing that the greatest adventure of all was the family we built together.",
-                imagePrompt: "pencil sketch of elderly couple by fireplace",
-                imageSrc: "assets/story_family.png",
+                chapterTitle: "Chapter 3: The Logic of Dreams: IIT",
+                narrative: "The lessons from the basketball court – that gentle wisdom of resilience and cooperation – became my compass as I navigated high school and eventually set my sights on IIT. Unlike some, I understood that true success wasn't a solitary climb, but a shared journey, where helping others also enriched my own path. I leaned into collaboration, valuing the exchange of ideas as much as the individual triumph, a philosophy that truly blossomed when I discovered software engineering.\nIt was a field that hummed with the same problem-solving spirit I so admired in my father. Here, I could build, create, and impact others on a grander scale, just as I had aimed to do as a team captain. Even when faced with the sting of failure, like that challenging Python course, I remembered my court-side mantra: it’s always better to try, to learn, to grow. IIT was a dazzling world of brilliant minds, and amidst the hum of computers and the sparkle of new ideas, I knew I had found my calling, a place where I could continue to build solutions and make a difference.",
+                imagePrompt: "watercolor painting of Sunita studying at IIT",
+                imageSrc: "assets/sunita_3.png",
+                isSampleAsset: true
+            },
+            {
+                chapterTitle: "Chapter 4: Paws and Pixels: A Twinkling Resilience",
+                narrative: "Inspired by the brilliant minds around me at IIT, I dared to dream a whimsical dream: a video chat network for lonely pets. Oh, how I imagined furry friends connecting, sharing barks and purrs across digital landscapes, just like in the movies! It was a passion project, born from a desire to connect and bring joy, but not everyone shared my vision. There were whispers of doubt, questions about whether pets could truly communicate through screens, and eventually, the venture, though brave, had to close its doors.\nIt was a challenging moment, the sting of disappointment sharp and real. Yet, in that quiet time, a familiar melody, 'Twinkle, Twinkle Little Star,' drifted into my heart. It was a lullaby from my baby days, a simple tune that brought a wave of comfort and memory. The song reminded me that even when dreams fade, the act of trying, of putting your whole heart into something, is a beautiful and worthy endeavor in itself.",
+                imagePrompt: "watercolor painting of Sunita looking at a pet monitor",
+                imageSrc: "assets/sunita_4.png",
+                isSampleAsset: true
+            },
+            {
+                chapterTitle: "Chapter 5: The Unlikely Strike: A Love Story",
+                narrative: "Life, as it often does, held a beautiful surprise for me when I was twenty-three. My path crossed with the love of my life in the most wonderfully unexpected way. Truth be told, I was a bit of a whirlwind back then, a touch brash. I remember seeing her studying, and in a moment of youthful impulsivity, I slammed her books down, demanding to know why she was always so engrossed! She didn't shout or cry, though; she simply looked up, her intelligent eyes wide with perplexity, and that quiet, unexpected reaction completely disarmed me. I mumbled an apology and hurried away.\nBut I couldn't forget her. Coffee led to conversations, and those conversations led to a bowling alley, where she, with her incredible focus and competitive spirit, bowled a perfect game. My heart, it bowled a perfect game right along with her! In that moment, I knew. Seven days into dating, I spontaneously proposed. 'If she can bowl a perfect game,' I declared, 'she can perfectly fit into my heart.' She said yes, and our grand Indian wedding, filled with laughter and sweet moments, sealed our love. We built a beautiful family, adopting two bright children who, like their mother, found their calling in the world of software, filling our home with joy and intellect.",
+                imagePrompt: "watercolor painting of bowling proposal",
+                imageSrc: "assets/sunita_5.png",
+                isSampleAsset: true
+            },
+            {
+                chapterTitle: "Chapter 6: The Sacred Hearth: A Legacy for Our Children's Children",
+                narrative: "After a lifetime of building and problem-solving, as I eased into my later years, my heart yearned to build one last, profound legacy. Having come to Canada as a young immigrant, I deeply understood the unique journey of blending cultures. I knew, too, that my children and future generations deserved to carry forward the rich tapestry of our Jain heritage, the culture that had so beautifully shaped who I was. And so, with immense dedication and love, I poured my energy into establishing a Jain temple here in Canada.\nIt became a sacred space, a vibrant community hub, a bridge between worlds. It was a place where our traditions could flourish, where stories could be shared, and where a sense of belonging could embrace all who walked through its doors. This temple, built not just with bricks and mortar, but with hope and heritage, ensures that the spiritual and cultural roots of our family will remain strong, nurturing the hearts and minds of our children's children for generations to come, a lasting testament to the beauty of our past and the promise of our future.",
+                imagePrompt: "watercolor painting of Sunita in front of temple in Canada",
+                imageSrc: "assets/sunita_6.png",
                 isSampleAsset: true
             }
         ]
@@ -1335,11 +1368,121 @@ document.addEventListener("DOMContentLoaded", () => {
                 photoUploadPlaceholder.classList.add("hidden");
                 photoUploadPreview.classList.remove("hidden");
                 if (photoDropZone) photoDropZone.classList.add("has-photo");
+                if (photoInputContainer) photoInputContainer.classList.add("has-photo");
                 showToast("Portrait photo added successfully.", "success");
             };
             img.src = e.target.result;
         };
         reader.readAsDataURL(file);
+    }
+
+    let activeCameraStream = null;
+
+    async function startCamera() {
+        if (cameraError) cameraError.classList.add("hidden");
+        if (cameraLoader) cameraLoader.classList.remove("hidden");
+        if (btnCameraCapture) btnCameraCapture.disabled = true;
+        if (cameraStream) cameraStream.srcObject = null;
+
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({
+                video: {
+                    width: { ideal: 640 },
+                    height: { ideal: 480 },
+                    facingMode: "user"
+                },
+                audio: false
+            });
+            
+            activeCameraStream = stream;
+            if (cameraStream) {
+                cameraStream.srcObject = stream;
+                // Wait for video element to start playing to guarantee dimensions are loaded
+                cameraStream.onloadedmetadata = () => {
+                    if (cameraLoader) cameraLoader.classList.add("hidden");
+                    if (btnCameraCapture) btnCameraCapture.disabled = false;
+                };
+            } else {
+                if (cameraLoader) cameraLoader.classList.add("hidden");
+            }
+        } catch (error) {
+            console.error("Camera access error:", error);
+            if (cameraLoader) cameraLoader.classList.add("hidden");
+            if (cameraError) cameraError.classList.remove("hidden");
+            
+            let errMsg = "Could not access camera. Please check permissions.";
+            if (error.name === "NotAllowedError" || error.name === "PermissionDeniedError") {
+                errMsg = "Camera access denied. Please grant permission in your browser settings.";
+            } else if (error.name === "NotFoundError" || error.name === "DevicesNotFoundError") {
+                errMsg = "No camera device found on your system.";
+            }
+            if (cameraErrorText) cameraErrorText.textContent = errMsg;
+            showToast(errMsg, "error");
+        }
+    }
+
+    function stopCamera() {
+        if (activeCameraStream) {
+            activeCameraStream.getTracks().forEach(track => track.stop());
+            activeCameraStream = null;
+        }
+        if (cameraStream) cameraStream.srcObject = null;
+        if (modalCamera) modalCamera.classList.add("hidden");
+    }
+
+    function capturePhoto() {
+        if (!activeCameraStream || !cameraStream) return;
+
+        const width = cameraStream.videoWidth || 640;
+        const height = cameraStream.videoHeight || 480;
+
+        // Downscale slightly to stay lightweight but good quality (max 512px dimension)
+        const maxDim = 512;
+        let destWidth = width;
+        let destHeight = height;
+
+        if (width > maxDim || height > maxDim) {
+            if (width > height) {
+                destHeight = Math.round((height * maxDim) / width);
+                destWidth = maxDim;
+            } else {
+                destWidth = Math.round((width * maxDim) / height);
+                destHeight = maxDim;
+            }
+        }
+
+        if (cameraSnapshotCanvas) {
+            cameraSnapshotCanvas.width = destWidth;
+            cameraSnapshotCanvas.height = destHeight;
+            const ctx = cameraSnapshotCanvas.getContext("2d");
+
+            // Since video is mirrored for user experience, let's flip it back to save normally
+            ctx.translate(destWidth, 0);
+            ctx.scale(-1, 1);
+
+            ctx.drawImage(cameraStream, 0, 0, destWidth, destHeight);
+
+            // Reset transform
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
+
+            const fullDataUrl = cameraSnapshotCanvas.toDataURL("image/jpeg", 0.85);
+            const base64Data = fullDataUrl.split(",")[1];
+
+            state.userReferencePicture = {
+                mimeType: "image/jpeg",
+                data: base64Data,
+                dataUrl: fullDataUrl
+            };
+
+            photoPreviewImage.src = fullDataUrl;
+            photoUploadPlaceholder.classList.add("hidden");
+            photoUploadPreview.classList.remove("hidden");
+            if (photoDropZone) photoDropZone.classList.add("has-photo");
+            if (photoInputContainer) photoInputContainer.classList.add("has-photo");
+            
+            stopCamera();
+            showToast("Portrait photo captured successfully.", "success");
+        }
     }
 
     // --- Event Listeners Setup ---
@@ -1354,6 +1497,16 @@ document.addEventListener("DOMContentLoaded", () => {
         });
 
         // Landing Page Actions
+        if (elderGenderInput) {
+            elderGenderInput.addEventListener("change", () => {
+                if (elderGenderInput.value === "Specify") {
+                    if (genderSpecifyContainer) genderSpecifyContainer.classList.remove("hidden");
+                } else {
+                    if (genderSpecifyContainer) genderSpecifyContainer.classList.add("hidden");
+                }
+            });
+        }
+
         startMemoirBtn.addEventListener("click", () => {
             startWizardFlow();
         });
@@ -1382,6 +1535,9 @@ document.addEventListener("DOMContentLoaded", () => {
         const sampleNextBtn = document.getElementById("btn-sample-next");
         const sampleIndicator = document.getElementById("sample-page-indicator");
         const sampleProgressRange = document.getElementById("sample-progress-range");
+        if (sampleProgressRange && sampleSpreads) {
+            sampleProgressRange.max = sampleSpreads.length - 1;
+        }
 
         function updateSamplePreview() {
             sampleSpreads.forEach((spread, idx) => {
@@ -1518,9 +1674,13 @@ document.addEventListener("DOMContentLoaded", () => {
             showToast("File attachment removed.", "info");
         });
 
-        // Photo Uploader Event Listeners
+        // Photo Uploader & Camera Event Listeners
         if (photoDropZone && photoUploader) {
-            photoDropZone.addEventListener("click", () => photoUploader.click());
+            photoDropZone.addEventListener("click", () => {
+                if (!photoDropZone.classList.contains("has-photo")) {
+                    photoUploader.click();
+                }
+            });
             photoUploader.addEventListener("change", (e) => {
                 const file = e.target.files && e.target.files[0];
                 if (file) {
@@ -1547,6 +1707,31 @@ document.addEventListener("DOMContentLoaded", () => {
             });
         }
 
+        if (photoCameraZone) {
+            photoCameraZone.addEventListener("click", () => {
+                if (modalCamera) modalCamera.classList.remove("hidden");
+                startCamera();
+            });
+        }
+
+        if (btnCloseCamera) {
+            btnCloseCamera.addEventListener("click", () => {
+                stopCamera();
+            });
+        }
+
+        if (btnCameraCancel) {
+            btnCameraCancel.addEventListener("click", () => {
+                stopCamera();
+            });
+        }
+
+        if (btnCameraCapture) {
+            btnCameraCapture.addEventListener("click", () => {
+                capturePhoto();
+            });
+        }
+
         if (removePhotoBtn) {
             removePhotoBtn.addEventListener("click", (e) => {
                 e.stopPropagation();
@@ -1554,6 +1739,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 photoUploadPreview.classList.add("hidden");
                 photoUploadPlaceholder.classList.remove("hidden");
                 if (photoDropZone) photoDropZone.classList.remove("has-photo");
+                if (photoInputContainer) photoInputContainer.classList.remove("has-photo");
                 photoUploader.value = "";
                 showToast("Portrait photo removed.", "info");
             });
@@ -1578,7 +1764,11 @@ document.addEventListener("DOMContentLoaded", () => {
         generateOutlineBtn.addEventListener("click", async () => {
             state.elderName = elderNameInput.value.trim();
             state.elderAge = parseInt(elderAgeInput.value, 10);
-            state.elderGender = elderGenderInput.value.trim();
+            if (elderGenderInput.value === "Specify") {
+                state.elderGender = elderGenderCustomInput ? elderGenderCustomInput.value.trim() : "Specify";
+            } else {
+                state.elderGender = elderGenderInput.value;
+            }
             state.elderEthnicity = elderEthnicityInput.value.trim();
             state.artStyle = artStyleSelect.value;
             state.bookLength = parseInt(bookLengthSelect.value);
