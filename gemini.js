@@ -5,8 +5,15 @@
  * needed in the browser — authentication and billing happen server-side.
  */
 
-// Where the local backend (backend/server.py) is listening.
-const BACKEND_BASE_URL = "http://127.0.0.1:5000";
+// Auto-resolve backend base URL:
+// - Direct local files (file://) fall back to http://127.0.0.1:5000.
+// - Local development servers running the frontend on a different port (e.g. 8000) target port 5000 on the same host.
+// - Deployments like Vercel (where frontend & backend share the origin) use relative URLs.
+const BACKEND_BASE_URL = window.location.protocol === 'file:'
+    ? 'http://127.0.0.1:5000'
+    : ((window.location.port && window.location.port !== '5000')
+        ? `${window.location.protocol}//${window.location.hostname}:5000`
+        : "");
 const GEMINI_REQUEST_TIMEOUT_MS = 60000;
 
 /**

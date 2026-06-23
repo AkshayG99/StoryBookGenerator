@@ -3,7 +3,7 @@
     - generic [ref=e3]:
       - generic [ref=e4]:
         - generic [ref=e5]: 
-        - heading "Echoes of a Lifetime" [level=1] [ref=e6]
+        - heading "Transformative AI" [level=1] [ref=e6]
       - generic [ref=e7]:
         - button "Toggle Theme" [ref=e8] [cursor=pointer]:
           - generic [ref=e9]: 

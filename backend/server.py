@@ -1,5 +1,5 @@
 """
-Local LLM backend for Echoes of a Lifetime.
+Local LLM backend for Transformative AI (TR.ai).
 
 Uses the google-genai SDK against Vertex AI with Application Default
 Credentials (ADC), so requests are billed to your Google Cloud project
@@ -13,6 +13,7 @@ so the frontend only needs to change where it sends the request.
 """
 
 import base64
+import json
 import os
 
 from flask import Flask, jsonify, request
@@ -20,9 +21,24 @@ from flask_cors import CORS
 from google import genai
 from google.genai import types
 from google.cloud import texttospeech
+from google.oauth2 import service_account
 
 # --- Configuration -----------------------------------------------------------
-PROJECT_ID = os.environ.get("GOOGLE_CLOUD_PROJECT", "project-4711618b-b483-407f-832")
+# Support service account credentials provided via environment variable
+credentials_json = os.environ.get("GOOGLE_CREDENTIALS_JSON")
+credentials = None
+if credentials_json:
+    try:
+        info = json.loads(credentials_json)
+        scopes = ["https://www.googleapis.com/auth/cloud-platform"]
+        credentials = service_account.Credentials.from_service_account_info(info, scopes=scopes)
+        PROJECT_ID = os.environ.get("GOOGLE_CLOUD_PROJECT", info.get("project_id"))
+    except Exception as e:
+        print(f"Error parsing GOOGLE_CREDENTIALS_JSON: {e}")
+        PROJECT_ID = os.environ.get("GOOGLE_CLOUD_PROJECT", "project-4711618b-b483-407f-832")
+else:
+    PROJECT_ID = os.environ.get("GOOGLE_CLOUD_PROJECT", "project-4711618b-b483-407f-832")
+
 LOCATION = os.environ.get("GOOGLE_CLOUD_LOCATION", "us-west1")
 MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
 
@@ -35,11 +51,15 @@ IMAGE_MODEL = os.environ.get("IMAGE_MODEL", "imagen-4.0-fast-generate-001")
 IMAGE_MODEL_FALLBACK = os.environ.get("IMAGE_MODEL_FALLBACK", "imagen-3.0-fast-generate-001")
 
 # Initialize the Vertex AI client once. This relies on ADC having been set up via
-#   gcloud auth application-default login
-client = genai.Client(vertexai=True, project=PROJECT_ID, location=LOCATION)
-
-# Cloud Text-to-Speech client (Chirp 3 HD voices), also authenticated via ADC.
-tts_client = texttospeech.TextToSpeechClient()
+#   gcloud auth application-default login, or service account credentials.
+if credentials:
+    client = genai.Client(vertexai=True, project=PROJECT_ID, location=LOCATION, credentials=credentials)
+    # Cloud Text-to-Speech client (Chirp 3 HD voices), also authenticated via service account credentials.
+    tts_client = texttospeech.TextToSpeechClient(credentials=credentials)
+else:
+    client = genai.Client(vertexai=True, project=PROJECT_ID, location=LOCATION)
+    # Cloud Text-to-Speech client (Chirp 3 HD voices), also authenticated via ADC.
+    tts_client = texttospeech.TextToSpeechClient()
 
 app = Flask(__name__)
 CORS(app)  # Allow the static frontend (served on a different port) to call us.

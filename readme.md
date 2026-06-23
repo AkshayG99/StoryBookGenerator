@@ -1,4 +1,4 @@
-# Echoes of a Lifetime — Interactive Memoir Book Creator
+# Transformative AI (TR.ai) — Interactive Memoir Book Creator
 
 An artisanal, Apple-inspired interactive web application designed to preserve family heritage. Transform raw voice recordings, interview transcripts, letters, or dictations of family elders into beautifully written, custom-illustrated digital storybooks.
 
@@ -6,7 +6,7 @@ An artisanal, Apple-inspired interactive web application designed to preserve fa
 
 ## 📖 Project Overview
 
-**Echoes of a Lifetime** acts as a virtual book workshop. By entering memoirs or transcribing live interviews, the memoir engine structures raw memories into chronological chapters. It writes final prose in chosen emotional tones and paints matching visual illustrations in real time. The final keepsake is rendered as an interactive 3D double-page flipbook, complete with background ambient soundscapes, read-aloud narration, and export capabilities.
+**Transformative AI (TR.ai)** acts as a virtual book workshop. By entering memoirs or transcribing live interviews, the memoir engine structures raw memories into chronological chapters. It writes final prose in chosen emotional tones and paints matching visual illustrations in real time. The final keepsake is rendered as an interactive 3D double-page flipbook, complete with background ambient soundscapes, read-aloud narration, and export capabilities.
 
 ---
 
