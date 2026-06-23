@@ -1286,24 +1286,24 @@ body.theme-dark .tab-btn.active {
 
 .echo-avatar {
     position: relative;
-    width: 52px;
-    height: 52px;
+    width: 36px;
+    height: 36px;
     border-radius: 50%;
     display: flex;
     align-items: center;
     justify-content: center;
     color: #fff;
-    font-size: 1.25rem;
+    font-size: 0.95rem;
     background: linear-gradient(135deg, var(--color-gold) 0%, #d8b15f 100%);
-    box-shadow: 0 6px 18px var(--color-gold-glow);
+    box-shadow: 0 4px 12px var(--color-gold-glow);
     flex-shrink: 0;
 }
 
 .echo-orb {
     position: absolute;
-    inset: -4px;
+    inset: -3px;
     border-radius: 50%;
-    border: 2px solid var(--color-gold);
+    border: 1.5px solid var(--color-gold);
     opacity: 0;
 }
 
@@ -1337,14 +1337,14 @@ body.theme-dark .tab-btn.active {
 
 .convo-identity-text h3 {
     font-family: 'Cinzel', serif;
-    font-size: 1.1rem;
+    font-size: 0.95rem;
     font-weight: 700;
     color: var(--text-primary);
     line-height: 1.1;
 }
 
 .echo-state {
-    font-size: 0.8rem;
+    font-size: 0.72rem;
     font-weight: 600;
     color: var(--color-gold);
 }
@@ -1352,14 +1352,14 @@ body.theme-dark .tab-btn.active {
 .convo-progress {
     display: flex;
     flex-direction: column;
-    gap: 0.35rem;
-    min-width: 180px;
+    gap: 0.25rem;
+    min-width: 120px;
     flex: 1;
-    max-width: 260px;
+    max-width: 160px;
 }
 
 .convo-progress-bar {
-    height: 7px;
+    height: 4px;
     border-radius: 6px;
     background: rgba(0, 0, 0, 0.08);
     overflow: hidden;
@@ -1379,7 +1379,7 @@ body.theme-dark .convo-progress-bar {
 }
 
 .convo-progress-label {
-    font-size: 0.72rem;
+    font-size: 0.65rem;
     font-weight: 600;
     color: var(--text-muted);
     text-align: right;
@@ -2681,6 +2681,58 @@ body.theme-dark .overlay-spinner {
 @keyframes zoomIn {
     from { transform: scale(0.97); opacity: 0; }
     to { transform: scale(1); opacity: 1; }
+}
+
+/* ============================================================
+   TalkingHead 3D Avatar Stage
+   ============================================================ */
+.avatar-container {
+    position: relative;
+    width: 100%;
+    height: 420px;
+    border-radius: 12px;
+    background: transparent;
+    box-shadow: none;
+    border: none;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.avatar-loading {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1rem;
+    color: var(--text-light);
+    font-family: var(--font-secondary);
+    font-size: 1.1rem;
+    z-index: 10;
+}
+
+.avatar-subtitles {
+    position: absolute;
+    bottom: 1.5rem;
+    left: 5%;
+    right: 5%;
+    background: rgba(0, 0, 0, 0.75);
+    color: #fff;
+    padding: 0.75rem 1.25rem;
+    border-radius: 8px;
+    font-family: 'EB Garamond', serif;
+    font-size: 1.25rem;
+    line-height: 1.4;
+    text-align: center;
+    backdrop-filter: blur(4px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+    z-index: 15;
+    transition: opacity 0.2s ease;
+}
+
+.hidden {
+    display: none !important;
 }
 
 /* Printable Book Layout for PDF Export */

@@ -653,8 +653,15 @@ document.addEventListener("DOMContentLoaded", () => {
         state.activeStep = step;
 
         // Stop any interview auto-flow when leaving the interview step.
-        if (step !== 2 && typeof clearInterviewTimers === "function") {
-            clearInterviewTimers();
+        if (step !== 2) {
+            if (typeof clearInterviewTimers === "function") clearInterviewTimers();
+            if (head) {
+                try { head.stopSpeaking(); } catch(e) {}
+                const subtitlesEl = document.getElementById("avatar-subtitles");
+                if (subtitlesEl) {
+                    subtitlesEl.style.display = "none";
+                }
+            }
         }
         
         // Update progress bar
@@ -676,7 +683,10 @@ document.addEventListener("DOMContentLoaded", () => {
         panelStep3.classList.remove("active");
 
         if (step === 1) panelStep1.classList.add("active");
-        if (step === 2) panelStepInterview.classList.add("active");
+        if (step === 2) {
+            panelStepInterview.classList.add("active");
+            initTalkingHead().catch(err => console.error(err));
+        }
         if (step === 3) panelStep2.classList.add("active");
         if (step === 4) panelStep3.classList.add("active");
 
@@ -813,6 +823,150 @@ document.addEventListener("DOMContentLoaded", () => {
         }, 2600);
     }
 
+    // --- TalkingHead 3D Avatar Integration ---
+    let head = null;
+
+    async function initTalkingHead() {
+        if (head) return;
+
+        const avatarContainer = document.getElementById("avatar-container");
+        const avatarLoading = document.getElementById("avatar-loading");
+        if (!avatarContainer) return;
+
+        // Force a layout reflow and wait until the container has a non-zero size.
+        // This is crucial because Three.js/WebGL computes rendering aspect ratio
+        // and sizing based on clientWidth/clientHeight, which are 0 if display: none.
+        let retries = 0;
+        while (avatarContainer.clientWidth === 0 && retries < 25) {
+            await new Promise(r => setTimeout(r, 40));
+            retries++;
+        }
+
+        try {
+            // Dynamically import TalkingHead from CDN
+            const { TalkingHead } = await import("talkinghead");
+
+            head = new TalkingHead(avatarContainer, {
+                lipsyncModules: ["en"],
+                cameraView: "upper", // Focus on chest-up view
+                cameraDistance: -0.8, // Zoom in slightly (default upper is 0), but less than -1.1 to prevent head cutoff
+                cameraY: -0.08, // Negative value shifts target/camera up, moving the head down in the viewport
+                avatarMood: "neutral",
+                avatarMute: false
+            });
+
+            // Load local avatar brunette-t.glb added by the user
+            await head.showAvatar({
+                url: "./avatarsdk.glb",
+                body: "F",
+                avatarMood: "neutral",
+                lipsyncLang: "en"
+            });
+
+            if (avatarLoading) {
+                avatarLoading.style.display = "none";
+            }
+
+            // Trigger a resize event to ensure canvas maps perfectly to container dimensions
+            head.onResize();
+        } catch (error) {
+            console.error("Failed to initialize TalkingHead:", error);
+            showToast("Could not load the 3D avatar. Standard voice mode active.", "error");
+        }
+    }
+
+    function base64ToArrayBuffer(base64) {
+        const binaryString = atob(base64);
+        const len = binaryString.length;
+        const bytes = new Uint8Array(len);
+        for (let i = 0; i < len; i++) {
+            bytes[i] = binaryString.charCodeAt(i);
+        }
+        return bytes.buffer;
+    }
+
+    function estimateWordTimings(text, totalDurationMs) {
+        const words = text.trim().split(/\s+/);
+        const totalChars = words.reduce((sum, w) => sum + w.length, 0);
+        const wtimes = [];
+        const wdurations = [];
+        let currentTime = 0;
+
+        for (let i = 0; i < words.length; i++) {
+            const word = words[i];
+            const pct = word.length / (totalChars || 1);
+            const duration = Math.round(totalDurationMs * pct);
+            wtimes.push(currentTime);
+            wdurations.push(duration);
+            currentTime += duration;
+        }
+
+        return { words, wtimes, wdurations };
+    }
+
+    async function speakWithTalkingHead(text) {
+        if (!head) {
+            // Fallback to standard speakWithChirp if head failed to load
+            await speakWithChirp(text, { rate: 0.96, voice: state.interviewerVoice });
+            return;
+        }
+
+        // Stop any current speech
+        head.stopSpeaking();
+
+        // 1. Synthesize speech using the backend API
+        const response = await fetch(`${BACKEND_BASE_URL}/api/tts`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                text: text.trim(),
+                voice: state.interviewerVoice,
+                rate: 0.96
+            })
+        });
+
+        if (!response.ok) {
+            throw new Error(`TTS backend error: ${response.statusText}`);
+        }
+
+        const data = await response.json();
+        if (!data || !data.audioContent) {
+            throw new Error("No audio content returned from TTS");
+        }
+
+        // 2. Decode base64 audio to AudioBuffer
+        const arrayBuffer = base64ToArrayBuffer(data.audioContent);
+        const audioBuffer = await head.audioCtx.decodeAudioData(arrayBuffer);
+
+        // 3. Estimate word timings
+        const totalDurationMs = audioBuffer.duration * 1000;
+        const { words, wtimes, wdurations } = estimateWordTimings(text, totalDurationMs);
+
+        // 4. Play speech and show subtitles
+        return new Promise((resolve) => {
+            const subtitlesEl = document.getElementById("avatar-subtitles");
+            if (subtitlesEl) {
+                subtitlesEl.textContent = text;
+                subtitlesEl.style.display = "block";
+            }
+
+            head.speakAudio({
+                audio: audioBuffer,
+                words: words,
+                wtimes: wtimes,
+                wdurations: wdurations
+            });
+
+            // Resolve the promise when speech concludes
+            setTimeout(() => {
+                if (subtitlesEl) {
+                    subtitlesEl.style.display = "none";
+                }
+                resolve();
+            }, totalDurationMs + 400); // 400ms padding
+        });
+    }
+
     // Echo says something out loud (Chirp voice) and shows it as a chat bubble.
     // A sequence number guards against overlap: if a newer utterance, a manual
     // mic tap, or leaving the step happens, the stale continuation does nothing.
@@ -822,7 +976,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const mySeq = ++echoSpeakSeq;
         setEchoState("Speaking…", "speaking");
         try {
-            await speakWithChirp(text, { rate: 0.96, voice: state.interviewerVoice });
+            await speakWithTalkingHead(text);
         } catch (_) { /* ignore voice errors */ }
         // Superseded (newer line, manual mic, or left the step): leave state alone.
         if (mySeq !== echoSpeakSeq || state.activeStep !== 2) return;
@@ -843,6 +997,13 @@ document.addEventListener("DOMContentLoaded", () => {
     function cancelEchoSpeech() {
         echoSpeakSeq++;
         stopChirp();
+        if (head) {
+            try { head.stopSpeaking(); } catch(e) {}
+        }
+        const subtitlesEl = document.getElementById("avatar-subtitles");
+        if (subtitlesEl) {
+            subtitlesEl.style.display = "none";
+        }
     }
 
     function armMicForAnswer() {

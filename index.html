@@ -17,6 +17,17 @@
     
     <!-- Main Stylesheet -->
     <link rel="stylesheet" href="styles.css">
+    
+    <!-- Three.js and TalkingHead Importmap -->
+    <script type="importmap">
+    { "imports":
+      {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js/+esm",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/",
+        "talkinghead": "https://cdn.jsdelivr.net/gh/met4citizen/TalkingHead@1.7/modules/talkinghead.mjs"
+      }
+    }
+    </script>
 </head>
 <body class="theme-sepia">
     <!-- Background Ambient Layer -->
@@ -442,8 +453,14 @@ You can also leave this blank and just talk to Echo."></textarea>
                         </div>
                     </div>
 
-                    <!-- Scrolling conversation transcript -->
-                    <div id="interview-chat" class="convo-chat" aria-live="polite"></div>
+                    <!-- TalkingHead Avatar Container -->
+                    <div id="avatar-container" class="avatar-container">
+                        <div id="avatar-loading" class="avatar-loading">
+                            <div class="spinner-ring"></div>
+                            <span>Inviting Echo...</span>
+                        </div>
+                        <div id="avatar-subtitles" class="avatar-subtitles" style="display: none;"></div>
+                    </div>
 
                     <!-- The person's current turn -->
                     <div class="convo-input-area">
@@ -628,6 +645,6 @@ You can also leave this blank and just talk to Echo."></textarea>
     <!-- Scripts -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="gemini.js"></script>
-    <script src="book.js"></script>
+    <script type="module" src="book.js"></script>
 </body>
 </html>
