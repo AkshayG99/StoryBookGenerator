@@ -2003,19 +2003,47 @@ document.addEventListener("DOMContentLoaded", () => {
                     userReferencePicture: state.userReferencePicture
                 }, (msg) => addLog(msg, "info"));
 
-                state.generatedBook = {
-                    title: finalTitle,
-                    subtitle: finalSubtitle,
-                    pages: storyData.pages.map((p) => {
+                const bookPages = [];
+
+                if (storyData.coverPage) {
+                    bookPages.push({
+                        chapterTitle: "",
+                        narrative: "",
+                        imagePrompt: `detailed visual illustration, ${storyData.coverPage.imagePrompt}`,
+                        imageSrc: null,
+                        imageStatus: "pending",
+                        isCover: true
+                    });
+                }
+
+                if (storyData.pages && Array.isArray(storyData.pages)) {
+                    storyData.pages.forEach((p) => {
                         const basePrompt = `detailed visual illustration, ${p.imagePrompt}`;
-                        return {
+                        bookPages.push({
                             chapterTitle: p.chapterTitle,
                             narrative: p.narrative,
                             imagePrompt: basePrompt,
-                            imageSrc: null,   // filled in by Imagen (lazy, per page)
+                            imageSrc: null,
                             imageStatus: "pending"
-                        };
-                    })
+                        });
+                    });
+                }
+
+                if (storyData.endingPage) {
+                    bookPages.push({
+                        chapterTitle: "",
+                        narrative: "",
+                        imagePrompt: `detailed visual illustration, ${storyData.endingPage.imagePrompt}`,
+                        imageSrc: null,
+                        imageStatus: "pending",
+                        isEnding: true
+                    });
+                }
+
+                state.generatedBook = {
+                    title: finalTitle,
+                    subtitle: finalSubtitle,
+                    pages: bookPages
                 };
 
                 addLog("Painting chapter illustrations with Imagen…", "info");
@@ -2204,9 +2232,13 @@ document.addEventListener("DOMContentLoaded", () => {
         const leftPageEl = document.getElementById("book-page-left");
         const rightPageEl = document.getElementById("book-page-right");
 
-        // Reduced motion, missing elements, or stacked mobile layout: swap instantly.
+        // Reduced motion, missing elements, stacked mobile layout, or cover/ending transitions: swap instantly.
         const isStacked = window.innerWidth <= 768;
-        if (prefersReducedMotion || isStacked || !flip || !leftPageEl || !rightPageEl) {
+        const curPage = state.generatedBook.pages[state.currentPageIndex];
+        const tgtPage = state.generatedBook.pages[targetIdx];
+        const isTransitioningCoverOrEnding = (curPage && (curPage.isCover || curPage.isEnding)) || (tgtPage && (tgtPage.isCover || tgtPage.isEnding));
+
+        if (prefersReducedMotion || isStacked || !flip || !leftPageEl || !rightPageEl || isTransitioningCoverOrEnding) {
             state.currentPageIndex = targetIdx;
             renderPageSpread();
             return;
@@ -2271,16 +2303,65 @@ document.addEventListener("DOMContentLoaded", () => {
         const total = state.generatedBook.pages.length;
 
         const bookElement = document.getElementById("book-element");
+        const leftPage = document.getElementById("book-page-left");
+        const rightPage = document.getElementById("book-page-right");
+        const spine = bookElement ? bookElement.querySelector(".book-spine") : null;
+        const illusContainer = leftPage ? leftPage.querySelector(".illustration-container") : null;
+
+        if (page.isCover || page.isEnding) {
+            if (leftPage) {
+                leftPage.style.width = "100%";
+                leftPage.style.borderRadius = "4px";
+            }
+            if (rightPage) {
+                rightPage.style.display = "none";
+            }
+            if (spine) {
+                spine.style.display = "none";
+            }
+            if (illusContainer) {
+                illusContainer.style.maxWidth = "70%";
+                illusContainer.style.margin = "0 auto";
+            }
+        } else {
+            if (leftPage) {
+                leftPage.style.width = "";
+                leftPage.style.borderRadius = "";
+            }
+            if (rightPage) {
+                rightPage.style.display = "";
+            }
+            if (spine) {
+                spine.style.display = "";
+            }
+            if (illusContainer) {
+                illusContainer.style.maxWidth = "";
+                illusContainer.style.margin = "";
+            }
+        }
+
         // Small settle wobble — skipped during a page-flip so they don't fight.
-        if (!isFlipping) {
+        if (!isFlipping && bookElement) {
             bookElement.style.transform = "rotateY(-2deg) scale(0.99)";
             setTimeout(() => {
                 bookElement.style.transform = "rotateY(0deg) scale(1)";
             }, 300);
         }
 
-        pageNumLeft.textContent = (idx * 2) + 1;
-        pageNumRight.textContent = (idx * 2) + 2;
+        const hasCover = state.generatedBook.pages.some((p) => p.isCover);
+        const hasEnding = state.generatedBook.pages.some((p) => p.isEnding);
+
+        if (page.isCover) {
+            pageNumLeft.textContent = "";
+            pageNumRight.textContent = "";
+        } else if (page.isEnding) {
+            pageNumLeft.textContent = "";
+            pageNumRight.textContent = "";
+        } else {
+            const chapIdx = hasCover ? idx - 1 : idx;
+            pageNumLeft.textContent = (chapIdx * 2) + 1;
+            pageNumRight.textContent = (chapIdx * 2) + 2;
+        }
 
         pageChapterTitle.textContent = page.chapterTitle;
         pageTextContainer.innerHTML = `<p>${escapeHtml(page.narrative).replace(/\n\n/g, '</p><p>')}</p>`;
@@ -2300,7 +2381,19 @@ document.addEventListener("DOMContentLoaded", () => {
         prevPageBtn.disabled = idx === 0;
         nextPageBtn.disabled = idx === total - 1;
         bookProgressRange.value = idx;
-        bookProgressText.textContent = `Page ${(idx * 2) + 1}-${(idx * 2) + 2} of ${total * 2}`;
+
+        if (page.isCover) {
+            bookProgressText.textContent = "Front Cover";
+            readAloudBtn.style.display = "none";
+        } else if (page.isEnding) {
+            bookProgressText.textContent = "Ending Page";
+            readAloudBtn.style.display = "none";
+        } else {
+            const chapIdx = hasCover ? idx - 1 : idx;
+            const totalChaps = total - (hasCover ? 1 : 0) - (hasEnding ? 1 : 0);
+            bookProgressText.textContent = `Page ${(chapIdx * 2) + 1}-${(chapIdx * 2) + 2} of ${totalChaps * 2}`;
+            readAloudBtn.style.display = "flex";
+        }
     }
 
     // Displays a page's Imagen illustration, generating it on demand if needed.
@@ -2514,9 +2607,21 @@ document.addEventListener("DOMContentLoaded", () => {
             doc.setTextColor(140, 122, 108);
             doc.text(doc.splitTextToSize(book.subtitle || "", contentW), pageW / 2, pageH / 2 + 20, { align: "center" });
 
+            const hasCover = book.pages.some((p) => p.isCover);
+            const hasEnding = book.pages.some((p) => p.isEnding);
+            const totalChapters = book.pages.length - (hasCover ? 1 : 0) - (hasEnding ? 1 : 0);
+
             for (let i = 0; i < book.pages.length; i++) {
                 const page = book.pages[i];
-                addLog(`Adding chapter ${i + 1} of ${book.pages.length}…`, "info");
+                if (page.isCover) {
+                    addLog("Adding cover page…", "info");
+                } else if (page.isEnding) {
+                    addLog("Adding ending page…", "info");
+                } else {
+                    const chapNum = hasCover ? i : i + 1;
+                    addLog(`Adding chapter ${chapNum} of ${totalChapters}…`, "info");
+                }
+
                 // Make sure this page's illustration has been generated.
                 if (!page.isSampleAsset && page.imageStatus !== "ready") {
                     await ensurePageImage(i);
@@ -2525,6 +2630,22 @@ document.addEventListener("DOMContentLoaded", () => {
 
                 doc.setFillColor(252, 250, 245);
                 doc.rect(0, 0, pageW, pageH, "F");
+
+                if (page.isCover || page.isEnding) {
+                    const imgData = await loadImageData(page.imageSrc);
+                    if (imgData) {
+                        const ratio = imgData.h / imgData.w;
+                        const drawW = contentW;
+                        const drawH = Math.min(drawW * ratio, pageH - margin * 2);
+                        const finalW = drawH / ratio;
+                        const x = margin + (contentW - finalW) / 2;
+                        const yCenter = margin + (pageH - margin * 2 - drawH) / 2;
+                        try {
+                            doc.addImage(imgData.dataUrl, "JPEG", x, yCenter, finalW, drawH);
+                        } catch (_) {}
+                    }
+                    continue; // Skip text rendering and footer page numbering for cover/ending pages
+                }
 
                 let y = margin;
 
@@ -2572,10 +2693,13 @@ document.addEventListener("DOMContentLoaded", () => {
                     y += lineH;
                 }
 
-                // Page number footer.
-                doc.setTextColor(170, 150, 120);
-                doc.setFontSize(10);
-                doc.text(`${i + 1}`, pageW / 2, pageH - 24, { align: "center" });
+                // Page number footer (skip for cover/ending pages).
+                if (!page.isCover && !page.isEnding) {
+                    doc.setTextColor(170, 150, 120);
+                    doc.setFontSize(10);
+                    const pageNumVal = hasCover ? i : i + 1;
+                    doc.text(`${pageNumVal}`, pageW / 2, pageH - 24, { align: "center" });
+                }
             }
 
             const cleanTitle = (book.title || "memoir").toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
@@ -2632,7 +2756,9 @@ document.addEventListener("DOMContentLoaded", () => {
         const pagesData = book.pages.map((p) => ({
             chapterTitle: p.chapterTitle || "",
             narrative: p.narrative || "",
-            imageSrc: p.imageSrc || ""
+            imageSrc: p.imageSrc || "",
+            isCover: p.isCover || false,
+            isEnding: p.isEnding || false
         }));
         const dataJson = JSON.stringify({
             title: book.title || "My Story",
@@ -2737,14 +2863,62 @@ function narrHTML(p){ var body=esc(p.narrative).split(/\\n\\n+/).map(function(t)
   return '<div class="narr"><h2>'+esc(p.chapterTitle)+'</h2><div class="body">'+body+'</div></div>'; }
 function render(){
   var p=pages[idx];
-  pl.innerHTML = illusHTML(p) + '<div class="pnum">'+(idx*2+1)+'</div>';
-  pr.innerHTML = narrHTML(p) + '<div class="pnum">'+(idx*2+2)+'</div>';
+  var total = pages.length;
+  var hasCover = pages.some(function(x){return x.isCover;});
+  var hasEnding = pages.some(function(x){return x.isEnding;});
+  var isCover = p.isCover;
+  var isEnding = p.isEnding;
+  
+  var leftPageNum = '';
+  var rightPageNum = '';
+  var progressVal = '';
+  
+  if (isCover || isEnding) {
+    pl.style.width = '100%';
+    pl.style.borderRadius = '4px';
+    pr.style.display = 'none';
+    var spine = document.querySelector('.spine');
+    if (spine) spine.style.display = 'none';
+  } else {
+    pl.style.width = '';
+    pl.style.borderRadius = '';
+    pr.style.display = '';
+    var spine = document.querySelector('.spine');
+    if (spine) spine.style.display = '';
+  }
+  
+  if (isCover) {
+    progressVal = 'Front Cover';
+  } else if (isEnding) {
+    progressVal = 'Ending Page';
+  } else {
+    var chapIdx = hasCover ? idx - 1 : idx;
+    var totalChaps = total - (hasCover ? 1 : 0) - (hasEnding ? 1 : 0);
+    leftPageNum = '<div class="pnum">'+(chapIdx*2+1)+'</div>';
+    rightPageNum = '<div class="pnum">'+(chapIdx*2+2)+'</div>';
+    progressVal = 'Pages '+(chapIdx*2+1)+'\\u2013'+(chapIdx*2+2)+' of '+(totalChaps*2);
+  }
+  
+  pl.innerHTML = illusHTML(p) + leftPageNum;
+  pr.innerHTML = narrHTML(p) + rightPageNum;
+  
+  if (isCover || isEnding) {
+    var illus = pl.querySelector('.illus');
+    if (illus) {
+      illus.style.maxWidth = '70%';
+      illus.style.margin = '0 auto';
+    }
+  }
+  
   prev.disabled = idx===0; next.disabled = idx===pages.length-1;
-  slider.value = idx; ind.textContent = 'Pages '+(idx*2+1)+'\\u2013'+(idx*2+2)+' of '+(pages.length*2);
+  slider.value = idx; ind.textContent = progressVal;
 }
 function turn(target){
   if(flipping || target<0 || target>=pages.length || target===idx) return;
-  if(window.innerWidth<=760){ idx=target; render(); return; }
+  var curPage = pages[idx];
+  var tgtPage = pages[target];
+  var isTransitioningCoverOrEnding = curPage.isCover || curPage.isEnding || tgtPage.isCover || tgtPage.isEnding;
+  if(window.innerWidth<=760 || isTransitioningCoverOrEnding){ idx=target; render(); return; }
   var dir = target>idx ? 'next':'prev';
   var curL=pl.innerHTML, curR=pr.innerHTML;
   flipping=true; idx=target; render();

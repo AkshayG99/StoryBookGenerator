@@ -12,7 +12,7 @@
 const BACKEND_BASE_URL = window.location.protocol === 'file:'
     ? 'http://127.0.0.1:5000'
     : ((window.location.port && window.location.port !== '5000')
-        ? `${window.location.protocol}//${window.location.hostname}:5000`
+        ? `${window.location.protocol}//${window.location.hostname === 'localhost' ? '127.0.0.1' : window.location.hostname}:5000`
         : "");
 const GEMINI_REQUEST_TIMEOUT_MS = 60000;
 
@@ -810,6 +810,12 @@ Illustration visual style: ${artStyle}
 Here is the approved chapter-by-chapter outline:
 ${JSON.stringify(chaptersEdited, null, 2)}
 
+In addition to writing the outline chapters, you MUST also generate:
+A. A "coverPage":
+   - "imagePrompt": A beautiful, evocative image prompt representing the cover of the book (e.g., a cozy study, a warm family tree, or a nostalgic portrait in the style of "${artStyle}"). Note: The cover page has NO title and NO narrative text, so you only need to write the image prompt.
+B. An "endingPage":
+   - "imagePrompt": A peaceful, closing image prompt in the style of "${artStyle}" representing legacy or looking to the future (e.g., watching a sunset, hands holding, or seeds growing). Note: The ending page has NO title and NO narrative text, so you only need to write the image prompt.
+
 For each chapter listed in the outline, your task is to write:
 1. "chapterTitle": The final chapter title (refine if needed to be magical, e.g., "The First Summer at the Farm").
 2. "narrative": Write 1 to 2 paragraphs of heartwarming, rich storytelling. Use first-person ("I") if it matches the elder's voice, or a warm third-person narrative. Write in a storybook style suitable for reading aloud to children and family. Connect the facts of the transcript into a touching scene.
@@ -826,9 +832,9 @@ For each chapter listed in the outline, your task is to write:
 === IMPORTANT: REFERENCE PHOTO INSTRUCTIONS ===
 An uploaded reference portrait photo of the narrator "${elderName}" has been provided. 
 1. Look closely at the person in the photo (their hair style, hair color, facial features, age, body type, expression, and any accessories like spectacles/glasses).
-2. In EVERY chapter's "imagePrompt" where "${elderName}" is depicted, you MUST describe them using the exact physical characteristics identified in this photo (e.g., "a gentleman with a friendly oval face, short wispy white hair, wearing round thin wire-frame glasses and a cozy navy blue sweater").
+2. In EVERY page's "imagePrompt" (including the cover/ending page "imagePrompt" if "${elderName}" is depicted) where "${elderName}" is shown, you MUST describe them using the exact physical characteristics identified in this photo (e.g., "a gentleman with a friendly oval face, short wispy white hair, wearing round thin wire-frame glasses and a cozy navy blue sweater").
 3. Do NOT mention the photo directly in the prompt (e.g., do not say "matching the reference photo"). Instead, describe their actual physical features directly in the scene.
-4. Keep these visual characteristics consistent across all chapters so the character maintains a highly stable and recognizable appearance matching the actual person.
+4. Keep these visual characteristics consistent across all pages so the character maintains a highly stable and recognizable appearance matching the actual person.
 `;
         parts.push({
             inlineData: {
@@ -842,13 +848,19 @@ An uploaded reference portrait photo of the narrator "${elderName}" has been pro
 
 Produce structured JSON matching this schema:
 {
+  "coverPage": {
+    "imagePrompt": "Detailed visual art generation prompt for the cover..."
+  },
   "pages": [
     {
       "chapterTitle": "Chapter Title",
       "narrative": "Story text...",
       "imagePrompt": "Detailed visual art generation prompt..."
     }
-  ]
+  ],
+  "endingPage": {
+    "imagePrompt": "Detailed visual art generation prompt for the ending..."
+  }
 }
 `;
 
@@ -870,6 +882,13 @@ Produce structured JSON matching this schema:
             responseSchema: {
                 type: "OBJECT",
                 properties: {
+                    coverPage: {
+                        type: "OBJECT",
+                        properties: {
+                            imagePrompt: { type: "STRING" }
+                        },
+                        required: ["imagePrompt"]
+                    },
                     pages: {
                         type: "ARRAY",
                         items: {
@@ -881,9 +900,16 @@ Produce structured JSON matching this schema:
                             },
                             required: ["chapterTitle", "narrative", "imagePrompt"]
                         }
+                    },
+                    endingPage: {
+                        type: "OBJECT",
+                        properties: {
+                            imagePrompt: { type: "STRING" }
+                        },
+                        required: ["imagePrompt"]
                     }
                 },
-                required: ["pages"]
+                required: ["coverPage", "pages", "endingPage"]
             }
         }
     };
