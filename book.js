@@ -195,6 +195,7 @@ document.addEventListener("DOMContentLoaded", () => {
     // Exports
     const exportPdfBtn = document.getElementById("export-pdf");
     const exportHtmlBtn = document.getElementById("export-html");
+    const exportAudioBtn = document.getElementById("export-audio");
     const exportJsonBtn = document.getElementById("export-json");
 
     // --- Web Speech API (Speech Recognition) ---
@@ -2159,6 +2160,15 @@ document.addEventListener("DOMContentLoaded", () => {
             downloadStandaloneHtml();
         });
 
+        if (exportAudioBtn) {
+            exportAudioBtn.addEventListener("click", (e) => {
+                e.preventDefault();
+                exportDropdown.classList.remove("open");
+                stopSpeech();
+                exportBookAsAudio();
+            });
+        }
+
         if (exportTranscriptBtn) {
             exportTranscriptBtn.addEventListener("click", (e) => {
                 e.preventDefault();
@@ -2747,6 +2757,192 @@ document.addEventListener("DOMContentLoaded", () => {
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
         showToast("Transcript downloaded.", "success");
+    }
+
+    async function exportBookAsAudio() {
+        const book = state.generatedBook;
+        if (!book || !book.pages || !book.pages.length) {
+            showToast("No book to export yet.", "error");
+            return;
+        }
+
+        loadingOverlayTitle.textContent = "Synthesizing Audiobook…";
+        loadingOverlaySubtitle.textContent = "Generating narrative speech and stitching chapters into a single audio file.";
+        generationLog.innerHTML = "";
+        loadingOverlay.classList.remove("hidden");
+        addLog("Preparing Web Audio context…", "info");
+
+        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+        if (!AudioContextClass) {
+            showToast("Your browser does not support the Web Audio API.", "error");
+            loadingOverlay.classList.add("hidden");
+            return;
+        }
+
+        const audioCtx = new AudioContextClass();
+        const decodedBuffers = [];
+
+        try {
+            const hasCover = book.pages.some((p) => p.isCover);
+            const hasEnding = book.pages.some((p) => p.isEnding);
+            const totalChapters = book.pages.length - (hasCover ? 1 : 0) - (hasEnding ? 1 : 0);
+
+            for (let i = 0; i < book.pages.length; i++) {
+                const page = book.pages[i];
+                let label = "";
+                if (page.isCover) {
+                    label = "Cover narration";
+                } else if (page.isEnding) {
+                    label = "Ending narration";
+                } else {
+                    const chapNum = hasCover ? i : i + 1;
+                    label = `Chapter ${chapNum} of ${totalChapters}`;
+                }
+
+                const text = (page.narrative || "").trim();
+                if (!text) {
+                    addLog(`Skipping ${label} (no narrative text)...`, "info");
+                    continue;
+                }
+
+                addLog(`Synthesizing ${label}...`, "info");
+
+                // Request base64 TTS audio from the backend API
+                const response = await fetch(`${BACKEND_BASE_URL}/api/tts`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        text: text,
+                        voice: state.interviewerVoice,
+                        rate: 0.90
+                    })
+                });
+
+                if (!response.ok) {
+                    const err = await response.json().catch(() => ({}));
+                    throw new Error(err.error?.message || response.statusText);
+                }
+
+                const data = await response.json();
+                if (!data || !data.audioContent) {
+                    throw new Error("No audio content returned from TTS");
+                }
+
+                // Decode base64 to AudioBuffer
+                addLog(`Decoding ${label} audio buffer...`, "info");
+                const arrayBuf = base64ToArrayBuffer(data.audioContent);
+                const audioBuffer = await audioCtx.decodeAudioData(arrayBuf);
+
+                // If we already have audio buffers, insert a silence gap before the new buffer
+                if (decodedBuffers.length > 0) {
+                    const silenceDur = 1.5;
+                    const sampleRate = audioBuffer.sampleRate;
+                    const numChannels = audioBuffer.numberOfChannels;
+                    const silenceBuffer = audioCtx.createBuffer(numChannels, sampleRate * silenceDur, sampleRate);
+                    decodedBuffers.push(silenceBuffer);
+                }
+
+                decodedBuffers.push(audioBuffer);
+            }
+
+            addLog("Stitching all chapters together...", "info");
+            const combinedBuffer = concatenateAudioBuffers(audioCtx, decodedBuffers);
+            if (!combinedBuffer) {
+                throw new Error("No narrative text was found to synthesize.");
+            }
+            
+            addLog("Encoding audiobook to WAV format...", "info");
+            const wavBlob = audioBufferToWav(combinedBuffer);
+
+            addLog("Triggering download...", "info");
+            const url = URL.createObjectURL(wavBlob);
+            const a = document.createElement("a");
+            a.href = url;
+            const cleanTitle = (book.title || "memoir").toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
+            a.download = `${cleanTitle || "memoir"}_audiobook.wav`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+
+            addLog("Audiobook ready and downloaded!", "success");
+            showToast("Your audiobook has been downloaded.", "success");
+        } catch (error) {
+            console.error("Audiobook export failed:", error);
+            addLog(`Error: ${error.message}`, "error");
+            showToast("Audiobook export failed: " + error.message, "error");
+        } finally {
+            await audioCtx.close().catch(() => {});
+            setTimeout(() => loadingOverlay.classList.add("hidden"), 1500);
+        }
+    }
+
+    function concatenateAudioBuffers(ctx, buffers) {
+        if (!buffers.length) return null;
+        let totalLength = 0;
+        for (const b of buffers) {
+            totalLength += b.length;
+        }
+        const numberOfChannels = buffers[0].numberOfChannels;
+        const sampleRate = buffers[0].sampleRate;
+        const outputBuffer = ctx.createBuffer(numberOfChannels, totalLength, sampleRate);
+        for (let channel = 0; channel < numberOfChannels; channel++) {
+            const outputData = outputBuffer.getChannelData(channel);
+            let offset = 0;
+            for (const b of buffers) {
+                outputData.set(b.getChannelData(channel), offset);
+                offset += b.length;
+            }
+        }
+        return outputBuffer;
+    }
+
+    function audioBufferToWav(buffer) {
+        let numOfChan = buffer.numberOfChannels,
+            length = buffer.length * numOfChan * 2 + 44,
+            bufferArr = new ArrayBuffer(length),
+            view = new DataView(bufferArr),
+            channels = [], i, sample,
+            offset = 0,
+            pos = 0;
+
+        function writeString(offsetStr, string) {
+            for (let j = 0; j < string.length; j++) {
+                view.setUint8(offsetStr + j, string.charCodeAt(j));
+            }
+        }
+
+        // write HEADERS
+        writeString(0, "RIFF");
+        view.setUint32(4, length - 8, true);
+        writeString(8, "WAVE");
+        writeString(12, "fmt ");
+        view.setUint32(16, 16, true);
+        view.setUint16(20, 1, true); // PCM - integer samples
+        view.setUint16(22, numOfChan, true);
+        view.setUint32(24, buffer.sampleRate, true);
+        view.setUint32(28, buffer.sampleRate * 2 * numOfChan, true); // byte rate
+        view.setUint16(32, numOfChan * 2, true); // block align
+        view.setUint16(34, 16, true); // bits per sample
+        writeString(36, "data");
+        view.setUint32(40, length - 44, true);
+
+        pos = 44;
+        // write interleaved data
+        for (i = 0; i < buffer.numberOfChannels; i++)
+            channels.push(buffer.getChannelData(i));
+
+        while (pos < length) {
+            for (i = 0; i < numOfChan; i++) {             // interleave channels
+                sample = Math.max(-1, Math.min(1, channels[i][offset])); // clamp
+                sample = (sample < 0 ? sample * 0x8000 : sample * 0x7FFF); // scale to 16-bit signed PCM
+                view.setInt16(pos, sample, true);          // write 16-bit sample
+                pos += 2;
+            }
+            offset++;                                     // next sample
+        }
+
+        return new Blob([bufferArr], { type: "audio/wav" });
     }
 
     function downloadStandaloneHtml() {
